@@ -475,7 +475,7 @@ function build(bctx: ObjectBuildContext) {
   paper.push(stickerPatch(front, 0.75, 3.3, 3.7, 2.1, -5 * DEG, cells.logo.uv, { nx: 6, ny: 4, offset: 0.004, lift: peelLift(0.22, 1, 1, 0.35) }));
   paper.push(stickerPatch(front, -2.72, 0.5, 4.2, 1.49, 92 * DEG, cells.bub.uv, { nx: 8, ny: 4, offset: 0.004 }));
   paper.push(stickerPatch(backFace, -1.2, -3.6, 3.2, 1.45, 4 * DEG, cells.file.uv, { nx: 4, ny: 4, offset: 0.004 }));
-  paper.push(stickerPatch(backFace, 2.55, 4.1, 1.3, 1.3, -10 * DEG, cells.dot.uv, { nx: 4, ny: 4, offset: 0.006 }));
+  paper.push(stickerPatch(backFace, 2.15, -4.15, 1.3, 1.3, -10 * DEG, cells.dot.uv, { nx: 4, ny: 4, offset: 0.006 }));
   // DO NOT DROP tape wrapped over the right edge (front face -> bevel -> side)
   {
     const xc = W / 2 - BEV;
@@ -513,7 +513,7 @@ function build(bctx: ObjectBuildContext) {
   }
   const paperGeo = merge(paper);
   paper.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.6, emissive: '#ffffff', emissiveMap: sheetTex, emissiveIntensity: 0.22 }), '#f1ece0')));
+  inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.6, emissive: '#ffffff', emissiveMap: sheetTex, emissiveIntensity: 0.3 }), '#f1ece0')));
 
   // ---------- idle: platter spins, the arm seeks, the LED blinks on seeks
   const update = (t: number) => {

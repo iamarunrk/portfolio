@@ -294,7 +294,7 @@ function fryGeometry(L: number, w: number): THREE.BufferGeometry {
   const gold = new THREE.Color('#ffbf26');
   const brown = new THREE.Color('#c9832c');
   const tmp = new THREE.Color();
-  const center = (t: number) => new THREE.Vector3(0.22 * Math.sin(Math.PI * t) * (L / 10), t * L, 0.08 * Math.sin(2 * Math.PI * t));
+  const center = (t: number) => new THREE.Vector3(0.13 * Math.sin(Math.PI * t) * (L / 10), t * L, 0.05 * Math.sin(2 * Math.PI * t));
   for (let j = 0; j <= nLen; j++) {
     const t = j / nLen;
     const cpt = center(t);
@@ -463,7 +463,7 @@ function build(bctx: ObjectBuildContext) {
   const placed: THREE.Vector3[] = [];
   // a fry may lean, but must stay inside the carton until it clears the rim
   const insideUntilRim = (p0: THREE.Vector3, dir: THREE.Vector3, len: number) => {
-    const m = 0.44;
+    const m = 0.66;
     for (let t = 0; t <= len; t += 0.4) {
       const p = p0.clone().addScaledVector(dir, t);
       if (p.y > H + 0.2) return true;
@@ -480,7 +480,7 @@ function build(bctx: ObjectBuildContext) {
     const bx = (rand() * 2 - 1) * (A0 + spread);
     const bz = (rand() * 2 - 1) * (B0 + spread * 0.4);
     // keep fries apart (fries starting at very different depths may overlap in plan)
-    if (placed.some((p) => Math.hypot(p.x - bx, p.y - bz) < 0.56 && Math.abs(p.z - y0) < 2.2)) continue;
+    if (placed.some((p) => Math.hypot(p.x - bx, p.y - bz) < 0.54 && Math.abs(p.z - y0) < 2.2)) continue;
     const back = 0.5 - bz / (2 * B1); // 0 front .. 1 back
     const dir = new THREE.Vector3(0.3 * (bx / A1) + (rand() - 0.5) * 0.16, 1, 0.26 * (bz / B1) + (rand() - 0.5) * 0.14).normalize();
     const len = 0.74 + rand() * 0.22 + back * 0.14 - (y0 - 2) * 0.06;

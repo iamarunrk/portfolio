@@ -193,8 +193,25 @@ function drawDisplay(d: Display, frame: number): void {
   v.addColorStop(1, 'rgba(0,0,0,0.38)');
   c.fillStyle = v;
   c.fillRect(DISP_PX.x, DISP_PX.y, DISP_PX.w, DISP_PX.h);
+  // battery LED on the glass: breathes with the frame counter
+  const p = 0.5 + 0.5 * Math.sin(frame * 0.3);
+  const lx = LED_PX.x;
+  const ly = LED_PX.y;
+  const glow = c.createRadialGradient(lx, ly, 0, lx, ly, 22);
+  glow.addColorStop(0, `rgba(255,90,70,${0.75 + 0.25 * p})`);
+  glow.addColorStop(0.35, `rgba(255,40,20,${0.45 + 0.4 * p})`);
+  glow.addColorStop(1, 'rgba(255,20,0,0)');
+  c.fillStyle = glow;
+  c.fillRect(lx - 24, ly - 24, 48, 48);
+  c.fillStyle = '#ffd2c8';
+  c.beginPath();
+  c.arc(lx - 2, ly - 2, 3, 0, Math.PI * 2);
+  c.fill();
   d.tex.needsUpdate = true;
 }
+
+/** Battery LED position on the panel textures (design px). */
+const LED_PX = { x: 46, y: PH - 33 };
 
 /** Printed black glass: frame around the LCD, wordmark, battery LED label. */
 function paintGlass(s: Surface): void {
@@ -706,12 +723,6 @@ function build(bctx: ObjectBuildContext) {
   guts.forEach((g) => g.dispose());
   inner.add(new THREE.Mesh(gutsGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.15, clearcoat: 0.3, side: THREE.DoubleSide })));
 
-  // ---------- battery LED (on the glass, pulses gently)
-  const ledGeo = new THREE.SphereGeometry(0.11, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2);
-  place(ledGeo, [PANEL.cx - PANEL.w / 2 + 0.4, PANEL.cy - PANEL.h / 2 + 0.52, front + PANEL.t], [0, 0, 0], [1, 1, 0.7]);
-  const ledMat = new THREE.MeshPhysicalMaterial({ color: '#ff2a1a', emissive: '#ff2414', emissiveIntensity: 2.2, roughness: 0.15, clearcoat: 1 });
-  inner.add(new THREE.Mesh(ledGeo, ledMat));
-
   // ---------- stickers
   const sheet = new StickerSheet(1024, 1024, bctx, 14);
   const cells = paintStickers(sheet);
@@ -729,12 +740,10 @@ function build(bctx: ObjectBuildContext) {
   const starGeo = stickerPatch(backFace, 2.25, -1.35, 2.0, 2.0, -14 * DEG, cells.star.uv, { nx: 10, ny: 10, offset: 0.004, lift: peelLift(0.3, 1, 1, 0.4) });
   inner.add(new THREE.Mesh(starGeo, holoFoil(sheetTex, { side: THREE.DoubleSide, forceSinglePass: true, metalness: 0.3, roughness: 0.25 })));
 
-  // ---------- idle: the LCD animates at 8 fps, the LED breathes
+  // ---------- idle: the LCD (and its battery LED) animate at 8 fps
   const update = (t: number) => {
     const f = Math.floor(t * 8);
     if (f !== disp.frame) drawDisplay(disp, f);
-    const p = 0.5 + 0.5 * Math.sin(t * 2.4);
-    ledMat.emissiveIntensity = 1.2 + 1.6 * p;
   };
   update(0);
 

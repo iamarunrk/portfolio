@@ -98,6 +98,53 @@ Run `npm run dev`, then open:
 | `/dev/library.html` | the shelf toys under studio light (QA harness) | `?only=cassette`, `?only=cassette&views=1` (8 angles), `&with=can`, `?bg=pastel`, `?hud=1` |
 | `/showcase.html` | the shelf page itself | `?theme=studio`, `?all=1` (build every card now), `#cassette` (close-up) |
 
+## The shelf
+
+Eighteen more collectibles are modelled and ready but **not on the homepage canvas**. They live in
+`src/objects/library/` (one file each, file name = kind) and have their own page,
+[`showcase.html`](showcase.html): drag a toy to spin it, click it for a close-up (drag, scroll or pinch,
+← →), filter by category and switch between the Pastel and Studio backgrounds.
+
+- `npm run dev`, then open `/showcase.html` (`/showcase.html#cassette` opens a close-up directly).
+- `npm run build:showcase` writes `dist-showcase/showcase.html`, one self-contained file you can open
+  or host anywhere. `npm run build` (the site) does not include the shelf.
+
+| Kind | Toy | Tagline | Category |
+| --- | --- | --- | --- |
+| `cassette` | Mixtape Vol. 0 | side A: design, side B: ship | Tech |
+| `figma` | Figma Tin | fresh frames, packed in auto layout | Studio |
+| `burger` | Full-Stack Burger | every layer, shipped | Food |
+| `camera` | Instant Zero | develops ideas in 90 seconds | Tech |
+| `handheld` | Pocket Zero | cloudy plastic, crunchy pixels | Tech |
+| `pizza` | Pizza Slice | one more slice, one more feature | Food |
+| `paintbox` | Paintbox | every colour, no undo | Studio |
+| `imac` | iMac G3 | hello (again) | Tech |
+| `biryani` | Dum Biryani | slow-cooked, worth the wait | Food |
+| `parcel` | Ship-It Box | fragile: contains MVP | Founder kit |
+| `harddrive` | Cold Storage | every final_final_v7, backed up | Tech |
+| `chai` | Cutting Chai | standup fuel | Food |
+| `swatches` | Swatch Fan | #D7FF3A and friends | Studio |
+| `cardreader` | First Dollar | $1.00 · approved | Founder kit |
+| `fries` | Hot Fixes | served hot, deployed fast | Food |
+| `desktop` | Relax Station | boot, relax, design | Tech |
+| `noodles` | 2-Minute MVP | just add hot water | Food |
+| `rocket` | Launch Day | t-minus zero | Founder kit |
+
+Like the hero toys they are fully procedural (geometry + canvas-painted stickers, no model files). Each
+group of objects keeps its own helpers in an underscore module (`_food.ts`, `_computers.ts`, ...).
+
+### Promoting a shelf toy to the canvas
+
+Shelf toys use the hero toys' build contract (`LibraryDef` is `ObjectDef` with a free-form `kind` and a
+`category`), so promoting one is registration only:
+
+1. Add its kind to `ObjectKind` in `src/objects/types.ts`.
+2. In `src/objects/index.ts`, import the toy and the adapter straight from their files (importing
+   `./library` would pull every shelf toy into the site bundle):
+   `import { cassette } from './library/cassette'`, `import { asObjectDef } from './library/types'`,
+   then add `asObjectDef(cassette, 'cassette')` to `OBJECTS`.
+3. Give it a slot in `src/layout.ts` (landscape + portrait) and `OBJECT_ORDER` in `src/store.ts`.
+
 ## Adding a new toy
 
 1. Create `src/objects/<name>.ts` exporting an `ObjectDef` (see `src/objects/types.ts`): build a

@@ -49,6 +49,43 @@ interface MatUniforms {
   uOutSrgb: Uniform<number>;
   uCol: Uniform<THREE.Vector3[]>;
   uLab: Uniform<THREE.Vector3[]>;
+  uGlassRect: Uniform<THREE.Vector4[]>;
+  uGlassShape: Uniform<THREE.Vector4[]>;
+  uGlassCount: Uniform<number>;
+}
+
+/** Max UI glass panels the material pass can lens at once (matches MAX_GLASS in the shader). */
+export const MAX_GLASS = 8;
+
+/** A chrome panel drawn as liquid glass over the background. CSS px, origin top-left. */
+export interface GlassPanel {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Corner radius in CSS px (use h/2 for a capsule). */
+  radius: number;
+  /** 0..1 refraction strength (multiply by the element's opacity while it fades). */
+  strength?: number;
+  /** Width of the curved rim in CSS px. Defaults from the size and radius. */
+  bezel?: number;
+}
+
+/** Lightness statistics of a screen region (0..1, ~OKLab L). */
+export interface RegionLuminance {
+  mean: number;
+  /** 10th percentile: the darkest content behind it. */
+  low: number;
+  /** 90th percentile: the brightest content behind it. */
+  high: number;
+}
+
+/** A screen region in CSS px, origin top-left. */
+export interface ScreenRegion {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -238,6 +275,9 @@ export class BackgroundEngine {
       uOutSrgb: { value: 0 },
       uCol: { value: cols },
       uLab: { value: labs },
+      uGlassRect: { value: Array.from({ length: MAX_GLASS }, () => new THREE.Vector4()) },
+      uGlassShape: { value: Array.from({ length: MAX_GLASS }, () => new THREE.Vector4()) },
+      uGlassCount: { value: 0 },
     };
 
     this.cfg = sanitize(DEFAULT_BG);
@@ -306,6 +346,68 @@ export class BackgroundEngine {
     this.mu.uUnit.value = designUnit(this.cssW, this.cssH, this.dpr);
     this.resizeBaseRT();
     this.baseDirty = true;
+  }
+
+  /**
+   * Chrome panels to render as liquid glass (refracting the finished background). Call every frame
+   * with the panels' current on-screen boxes; pass [] to clear.
+   */
+  setGlass(panels: readonly GlassPanel[]): void {
+    const rects = this.mu.uGlassRect.value;
+    const shapes = this.mu.uGlassShape.value;
+    const dpr = this.dpr;
+    let n = 0;
+    for (const p of panels) {
+      if (n >= MAX_GLASS) break;
+      const w = finite(p.w, 0);
+      const h = finite(p.h, 0);
+      const strength = clamp01(finite(p.strength ?? 1, 1));
+      if (w < 2 || h < 2 || strength <= 0.001) continue;
+      const x = finite(p.x, 0);
+      const y = finite(p.y, 0);
+      const radius = Math.max(0, Math.min(finite(p.radius, 0), w / 2, h / 2));
+      const bezel = p.bezel ?? Math.max(6, Math.min(radius * 0.95, Math.min(w, h) * 0.46, 26));
+      rects[n].set((x + w / 2) * dpr, this.outH - (y + h / 2) * dpr, (w / 2) * dpr, (h / 2) * dpr);
+      shapes[n].set(radius * dpr, strength, Math.max(1, bezel * dpr), 0);
+      n++;
+    }
+    this.mu.uGlassCount.value = n;
+  }
+
+  /**
+   * Perceived lightness (0..1, ~OKLab L) of the background inside each screen region (CSS px),
+   * without the UI glass: mean plus the 10th/90th percentiles, so chrome can pick light or dark
+   * glass and know how much contrast sits behind its text.
+   */
+  sampleRegionLuminance(regions: readonly ScreenRegion[], cfg?: BgConfig): RegionLuminance[] {
+    const empty = { mean: 0, low: 0, high: 0 };
+    if (this.disposed || regions.length === 0) return regions.map(() => empty);
+    const w = 64;
+    const h = Math.max(8, Math.min(200, Math.round((w * this.outH) / this.outW)));
+    const dpr = Math.max(0.1, (w / this.cssW) * 1.5);
+    const px = this.renderOffscreen(cfg ?? this.cfg, w, h, dpr);
+    const sx = w / this.cssW;
+    const sy = h / this.cssH;
+    return regions.map((r) => {
+      const x0 = Math.max(0, Math.floor(finite(r.x, 0) * sx));
+      const x1 = Math.min(w, Math.ceil((finite(r.x, 0) + finite(r.w, 0)) * sx));
+      const y0 = Math.max(0, Math.floor(finite(r.y, 0) * sy));
+      const y1 = Math.min(h, Math.ceil((finite(r.y, 0) + finite(r.h, 0)) * sy));
+      const vals: number[] = [];
+      for (let yy = y0; yy < y1; yy++) {
+        const row = h - 1 - yy; // readback rows are bottom-up
+        for (let xx = x0; xx < x1; xx++) {
+          const i = (row * w + xx) * 4;
+          const Y = 0.2126 * toLin(px[i] / 255) + 0.7152 * toLin(px[i + 1] / 255) + 0.0722 * toLin(px[i + 2] / 255);
+          vals.push(Math.cbrt(Y));
+        }
+      }
+      if (!vals.length) return empty;
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      vals.sort((a, b) => a - b);
+      const at = (q: number) => vals[Math.min(vals.length - 1, Math.max(0, Math.round(q * (vals.length - 1))))];
+      return { mean, low: at(0.1), high: at(0.9) };
+    });
   }
 
   /** 0..1, origin bottom-left. The liquid-glass pointer blob eases toward it. */
@@ -606,6 +708,7 @@ export class BackgroundEngine {
     const prevBaseMat = this.baseQuad.material;
     const prevMatMat = this.matQuad.material;
     const prevDirty = this.baseDirty;
+    const prevGlass = this.mu.uGlassCount.value;
 
     const out = new Uint8Array(w * h * 4);
     try {
@@ -627,6 +730,7 @@ export class BackgroundEngine {
       this.mu.uUnit.value = designUnit(w / dpr, h / dpr, dpr);
       this.mu.tBase.value = tb.texture;
       this.mu.uOutSrgb.value = 1;
+      this.mu.uGlassCount.value = 0; // thumbnails and luminance probes never include the chrome
       this.mu.uPointer.value.set(0.62, 0.58);
       for (const p of this.mu.uPulses.value) p.set(0, 0, 0, 0);
 
@@ -645,6 +749,7 @@ export class BackgroundEngine {
       this.applyMaterial(this.cfg.material, this.cfg.fx);
       this.mu.tBase.value = this.rt.texture;
       this.mu.uOutSrgb.value = 0;
+      this.mu.uGlassCount.value = prevGlass;
       this.mu.uRes.value.set(this.outW, this.outH);
       this.mu.uDpr.value = this.dpr;
       this.mu.uUnit.value = designUnit(this.cssW, this.cssH, this.dpr);

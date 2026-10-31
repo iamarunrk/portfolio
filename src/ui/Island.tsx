@@ -27,6 +27,7 @@ import { Slider, formatNumber } from './controls/Slider';
 import { Rail, type SwatchItem } from './controls/Swatch';
 import { paletteCss, useThumb } from './thumbs';
 import { keepKeys } from './keys';
+import { useLiquidGlass } from './liquidGlass';
 import {
   IconColors,
   IconDice,
@@ -564,6 +565,56 @@ export function Island() {
   const rootRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<IslandTab, HTMLButtonElement | null>>>({});
+  useLiquidGlass(rootRef);
+
+  // Liquid selection: one lime glass capsule that slides (with a squash) to the open tab.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const bubbleRef = useRef<HTMLSpanElement>(null);
+  const bubbleShown = useRef(false);
+  useLayoutEffect(() => {
+    const b = bubbleRef.current;
+    const tabs = tabsRef.current;
+    if (!b || !tabs) return;
+    const place = (animate: boolean) => {
+      const btn = tab ? tabRefs.current[tab] : null;
+      if (!btn) {
+        b.setAttribute('data-off', '');
+        bubbleShown.current = false;
+        return;
+      }
+      const wasShown = bubbleShown.current;
+      if (!wasShown || !animate) b.setAttribute('data-snap', '');
+      b.style.setProperty('--bx', `${btn.offsetLeft}px`);
+      b.style.setProperty('--bw', `${btn.offsetWidth}px`);
+      b.removeAttribute('data-off');
+      if (!wasShown || !animate) {
+        void b.offsetWidth; // commit the jump before transitions come back
+        b.removeAttribute('data-snap');
+      } else if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        b.animate?.(
+          [{ scale: '1 1' }, { scale: '1.14 0.86', offset: 0.32 }, { scale: '0.97 1.04', offset: 0.7 }, { scale: '1 1' }],
+          { duration: 560, easing: 'ease-out' },
+        );
+      }
+      bubbleShown.current = true;
+    };
+    place(true);
+    // Re-measure when the row reflows (labels hide on narrow screens). The observer's first
+    // callback fires right away; skip it so it doesn't cancel the slide that just started.
+    let initial = true;
+    const ro =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            if (initial) {
+              initial = false;
+              return;
+            }
+            place(false);
+          })
+        : null;
+    ro?.observe(tabs);
+    return () => ro?.disconnect();
+  }, [tab]);
 
   // Keep the last panel rendered while the island collapses.
   const [shown, setShown] = useState<IslandTab | null>(tab);
@@ -679,7 +730,8 @@ export function Island() {
       */}
       <CurrentSwatch onOpen={(t) => setTab(t)} />
       <span className="ui-sep ui-sep--a" aria-hidden="true" />
-      <div className="ui-tabs" role="tablist" aria-label="Remix the background" onKeyDown={onTabsKey}>
+      <div ref={tabsRef} className="ui-tabs" role="tablist" aria-label="Remix the background" onKeyDown={onTabsKey}>
+        <span ref={bubbleRef} className="ui-tabs__bubble" data-off="" aria-hidden="true" />
         {TABS.map(({ id, label, Icon }) => {
           const selected = tab === id;
           return (

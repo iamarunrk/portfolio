@@ -25,6 +25,22 @@ The bottom island remixes the canvas: **Shaders** (animated generators), **Gradi
 **Glass** (fluted, ribbed, frosted, blur, liquid glass, glass tiles, water, crystal, prism,
 halftone, pixelate, CRT, dither) and **Effects** (grain, vignette, speed).
 
+## Liquid Glass chrome
+
+The island, top bar, hint, show-UI button and selection pill are iOS-style Liquid Glass:
+
+- **Lensing in WebGL, so it works in every browser (Safari included).** Each glass element registers
+  itself (`useLiquidGlass` in `src/ui/liquidGlass.ts`); every frame its box is handed to the
+  background engine, whose material pass refracts the finished background inside that rounded shape.
+  The rim is a convex squircle bezel, h(t) = (1 − (1 − t)⁴)^¼, and the shift comes from Snell's law
+  (IOR 1.5): strong bending at the edges, a clear middle, slight chromatic dispersion and bevel light.
+- **Adaptive tone.** The engine measures the background behind each panel (mean, 10th and 90th
+  percentile lightness). Panels switch between smoky glass with light glyphs and milky glass with dark
+  glyphs, and dim or whiten further when high-contrast content sits behind the text.
+- **CSS on top** adds the tint, the specular rim (top-left / bottom-right highlights), depth shadows,
+  a light frost (heavier when the island opens, like an iOS sheet), and light that follows the pointer.
+- **Liquid selection.** A single lime glass capsule slides and squashes between the island tabs.
+
 ## Stack
 
 - [Vite](https://vite.dev) + React 19 + TypeScript
@@ -64,7 +80,7 @@ src/
   hero/TitleFrame.tsx     the headline frame
   objects/                the 3D collectibles (one file each) + sticker painting helpers
   bg/                     background engine, GLSL, presets and metadata
-  ui/                     bottom island, top bar, hint
+  ui/                     bottom island, top bar, hint, Liquid Glass registry
 ```
 
 ## Dev pages

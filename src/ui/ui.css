@@ -146,7 +146,7 @@
     padding: 5px 9px;
     border-radius: 9px;
     background: var(--ui-text);
-    color: #0b0b0d;
+    color: var(--ui-tip-ink, #0b0b0d);
     font-size: 11.5px;
     font-weight: 500;
     line-height: 1.2;
@@ -221,7 +221,7 @@
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: var(--ui-line) transparent;
   padding: 16px 16px 14px;
   opacity: 0;
   transform: translateY(10px);
@@ -439,14 +439,14 @@
   min-height: 40px;
   padding: 9px 12px;
   border-radius: 12px;
-  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border: 1px dashed var(--ui-line);
   color: var(--ui-muted);
   font-size: 12.5px;
   line-height: 1.35;
 }
 .ui-note svg {
   flex: none;
-  color: var(--ui-accent);
+  color: var(--ui-accent-fg, var(--ui-accent));
 }
 
 /* rail of swatches */
@@ -665,7 +665,7 @@
   border-radius: 12px;
   color: var(--ui-muted);
   background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.14) !important;
+  border: 1px dashed var(--ui-line) !important;
   transition:
     color 0.18s ease,
     background-color 0.18s ease,
@@ -709,17 +709,17 @@
   z-index: -1;
   inset: 0 auto 0 0;
   width: calc(var(--p) * 100%);
-  background: rgba(255, 255, 255, 0.075);
+  background: var(--ui-fill);
   box-shadow: inset 0 -2px 0 var(--ui-accent);
   transition:
     background-color 0.18s ease,
     box-shadow 0.18s ease;
 }
 .ui-slider:hover .ui-slider__fill {
-  background: rgba(255, 255, 255, 0.11);
+  background: var(--ui-fill-hover);
 }
 .ui-slider[data-dragging] .ui-slider__fill {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--ui-fill-press);
   box-shadow:
     inset -2px 0 0 var(--ui-accent),
     inset 0 -2px 0 var(--ui-accent);
@@ -917,7 +917,7 @@
   padding: 0 9px 0 8px;
   border-radius: 999px;
   background: var(--ui-accent-soft);
-  color: var(--ui-accent);
+  color: var(--ui-accent-fg, var(--ui-accent));
   font-size: 11.5px;
   font-weight: 600;
   white-space: nowrap;
@@ -1019,7 +1019,7 @@
     visibility 0s;
 }
 .ui-show:hover {
-  background: rgba(30, 30, 34, 0.8);
+  --lg-glow: 1;
 }
 .ui-show:active {
   transform: scale(0.92);
@@ -1085,7 +1085,7 @@
 
 .ui-hint__spark {
   flex: none;
-  color: var(--ui-accent);
+  color: var(--ui-accent-fg, var(--ui-accent));
   filter: drop-shadow(0 0 6px rgba(215, 255, 58, 0.6));
   animation: ui-twinkle 2.6s ease-in-out infinite;
 }
@@ -1113,7 +1113,7 @@
   font-size: 18px;
   letter-spacing: 0;
   line-height: 0.9;
-  color: var(--ui-accent);
+  color: var(--ui-accent-fg, var(--ui-accent));
 }
 .ui-hint__sub {
   font-size: 12.5px;
@@ -1382,5 +1382,173 @@
   .ui-tbtn:hover:not(:disabled) svg,
   .ui-top--left:hover .ui-logo {
     transform: none;
+  }
+}
+
+/* ==========================================================================
+   Liquid Glass (iOS 26 style)
+   The lensing itself is rendered by the WebGL background under every
+   registered panel (src/ui/liquidGlass.ts), so it works in every browser.
+   This layer adds the tint, the specular rim, depth and a light frost.
+   `data-tone` switches between smoky glass with light glyphs and milky glass
+   with dark glyphs, from what is actually behind each panel.
+   ========================================================================== */
+
+@property --lg-blur {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 3px;
+}
+
+.ui-glass {
+  /* smoky glass dims more when bright content sits behind its white glyphs (--lg-high from liquidGlass.ts) */
+  --ui-glass: rgba(22, 22, 26, calc(0.18 + 0.62 * max(0, var(--lg-high, 0.5) - 0.5)));
+  --ui-text: #ffffff;
+  --ui-muted: rgba(255, 255, 255, 0.76);
+  --ui-dim: rgba(255, 255, 255, 0.56);
+  --ui-line: rgba(255, 255, 255, 0.22);
+  --ui-line-soft: rgba(255, 255, 255, 0.14);
+  --ui-fill: rgba(255, 255, 255, 0.12);
+  --ui-fill-hover: rgba(255, 255, 255, 0.18);
+  --ui-fill-press: rgba(255, 255, 255, 0.25);
+  --ui-tip-ink: #0b0b0d;
+  --ui-accent-fg: #d7ff3a;
+  --lg-rim: rgba(255, 255, 255, 0.9);
+  --lg-rim-2: rgba(255, 255, 255, 0.34);
+  --lg-edge: rgba(255, 255, 255, 0.24);
+  --lg-depth: rgba(0, 0, 0, 0.34);
+  --lg-sheen: rgba(255, 255, 255, 0.13);
+  --lg-ink-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --lg-blur: 3px;
+
+  background:
+    radial-gradient(
+      85% 130% at var(--lg-x, 26%) var(--lg-y, -12%),
+      rgba(255, 255, 255, calc(0.05 + 0.11 * var(--lg-glow, 0))),
+      transparent 62%
+    ),
+    linear-gradient(180deg, var(--lg-sheen), transparent 52%),
+    var(--ui-glass);
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(190%) brightness(1.05);
+  backdrop-filter: blur(var(--lg-blur)) saturate(190%) brightness(1.05);
+  border: 1px solid transparent;
+  box-shadow:
+    inset 0 0 0 0.5px var(--lg-edge),
+    inset 0 1px 1px -0.5px var(--lg-rim),
+    inset 0 -14px 22px -18px var(--lg-depth),
+    0 0.5px 1px rgba(0, 0, 0, 0.14),
+    0 10px 30px -12px rgba(0, 0, 0, 0.3),
+    0 28px 70px -36px rgba(0, 0, 0, 0.4);
+  text-shadow: var(--lg-ink-shadow);
+}
+
+.ui-glass[data-tone='light'] {
+  /* milky glass whitens more when dark content sits behind its dark glyphs (--lg-low) */
+  --ui-glass: rgba(255, 255, 255, calc(0.34 + 0.7 * max(0, 0.62 - var(--lg-low, 0.8))));
+  --ui-text: #0e0e11;
+  --ui-muted: rgba(14, 14, 17, 0.7);
+  --ui-dim: rgba(14, 14, 17, 0.52);
+  --ui-line: rgba(14, 14, 17, 0.14);
+  --ui-line-soft: rgba(14, 14, 17, 0.09);
+  --ui-fill: rgba(14, 14, 17, 0.06);
+  --ui-fill-hover: rgba(14, 14, 17, 0.1);
+  --ui-fill-press: rgba(14, 14, 17, 0.15);
+  --ui-tip-ink: #ffffff;
+  /* lime is unreadable as text on milky glass: use a deep olive of the same hue */
+  --ui-accent-fg: #4a6400;
+  --ui-accent-soft: rgba(150, 196, 0, 0.2);
+  --lg-rim: #ffffff;
+  --lg-rim-2: rgba(255, 255, 255, 0.72);
+  --lg-edge: rgba(255, 255, 255, 0.6);
+  --lg-depth: rgba(0, 0, 0, 0.12);
+  --lg-sheen: rgba(255, 255, 255, 0.32);
+  --lg-ink-shadow: 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+/* Specular rim: light catches the top-left and bottom-right of the bezel. */
+.ui-glass::before {
+  inset: -1px;
+  z-index: 3;
+  padding: 1.25px;
+  background: linear-gradient(
+    135deg,
+    var(--lg-rim) 0%,
+    var(--lg-rim-2) 12%,
+    transparent 30%,
+    transparent 64%,
+    var(--lg-rim-2) 84%,
+    var(--lg-rim) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* The open island holds dense controls: frost it more, like an iOS sheet. */
+.ui-island {
+  transition:
+    opacity 0.32s var(--ui-out),
+    transform 0.5s var(--ui-spring),
+    visibility 0s linear 0s,
+    --lg-blur 0.45s ease;
+}
+.ui-island[data-open] {
+  --lg-blur: 20px;
+  --ui-glass: rgba(22, 22, 26, calc(0.4 + 0.4 * max(0, var(--lg-high, 0.5) - 0.5)));
+}
+.ui-island[data-open][data-tone='light'] {
+  --ui-glass: rgba(255, 255, 255, calc(0.54 + 0.5 * max(0, 0.62 - var(--lg-low, 0.8))));
+}
+
+/* Liquid selection: one lime glass capsule slides (and squashes) between tabs. */
+.ui-tabs {
+  position: relative;
+  isolation: isolate;
+}
+.ui-tabs__bubble {
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  top: 50%;
+  width: var(--bw, 40px);
+  height: 40px;
+  border-radius: 16px;
+  transform: translate3d(var(--bx, 0px), -50%, 0);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 58%),
+    var(--ui-accent);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -3px 7px -2px rgba(90, 120, 0, 0.42),
+    0 0 0 0.5px rgba(255, 255, 255, 0.55),
+    0 8px 20px -8px rgba(178, 225, 0, 0.8);
+  pointer-events: none;
+  transition:
+    transform 0.56s cubic-bezier(0.25, 1.3, 0.35, 1),
+    width 0.56s cubic-bezier(0.25, 1.3, 0.35, 1),
+    opacity 0.2s ease;
+}
+.ui-tabs__bubble[data-off] {
+  opacity: 0;
+}
+.ui-tabs__bubble[data-snap] {
+  transition: opacity 0.2s ease;
+}
+.ui .ui-tab[aria-selected='true'],
+.ui .ui-tab[aria-selected='true']:hover {
+  color: var(--ui-accent-ink);
+  background: transparent;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-tabs__bubble {
+    transition: opacity 0.2s ease;
   }
 }

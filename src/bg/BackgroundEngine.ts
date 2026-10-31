@@ -273,6 +273,11 @@ export class BackgroundEngine {
   /** Cheap: uniforms only. Programs are compiled once per kind and cached. */
   setConfig(cfg: BgConfig): void {
     const next = sanitize(cfg);
+    const prev = this.cfg.base;
+    const nb = next.base;
+    const baseChanged =
+      nb.kind !== prev.kind || nb.scale !== prev.scale || nb.angle !== prev.angle || nb.detail !== prev.detail ||
+      nb.amount !== prev.amount || nb.colors.some((c, i) => c !== prev.colors[i]);
     this.cfg = next;
     if (next.base.kind !== this.baseKind) {
       this.baseKind = next.base.kind;
@@ -287,7 +292,7 @@ export class BackgroundEngine {
     }
     this.applyBase(next.base);
     this.applyMaterial(next.material, next.fx);
-    this.baseDirty = true;
+    if (baseChanged) this.baseDirty = true;
   }
 
   setSize(cssWidth: number, cssHeight: number, dpr: number): void {
@@ -327,7 +332,7 @@ export class BackgroundEngine {
     this.matTime += d * this.cfg.material.speed;
     this.clock += d;
     this.pointer.lerp(this.pointerTarget, 1 - Math.exp(-d * 4.5));
-    this.pulses = this.pulses.filter((p) => this.clock - p.t0 < PULSE_LIFE);
+    while (this.pulses.length && this.clock - this.pulses[0].t0 >= PULSE_LIFE) this.pulses.shift();
     this.syncDynamicUniforms();
     if (this.baseDirty) {
       this.renderBase(this.rt);

@@ -350,13 +350,12 @@ export function ribbon(
 /** Merge geometries after making their attribute sets compatible (drops extras, adds uv). */
 export function merge(geos: THREE.BufferGeometry[], keepGroups = false): THREE.BufferGeometry {
   const prepared = geos.map((g) => {
-    let q = g.index ? g : g;
-    if (!q.getAttribute('uv')) {
-      const n = q.getAttribute('position').count;
-      q.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
+    if (!g.getAttribute('uv')) {
+      const n = g.getAttribute('position').count;
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
     }
-    if (!q.getAttribute('normal')) q.computeVertexNormals();
-    return q;
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    return g;
   });
   const anyIndexed = prepared.some((g) => g.index);
   const allIndexed = prepared.every((g) => g.index);

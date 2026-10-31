@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { ensureFonts } from '../fonts';
+import { ensureFonts, fontsLoaded, whenFontsLoaded } from '../fonts';
 import { defaultSlot, layerZ, type CanvasFrame } from '../layout';
 import type { BuiltObject, ObjectDef } from '../objects/types';
 import { useStore, type PlacedObject } from '../store';
@@ -102,23 +102,33 @@ export function ObjectNode({ def, placed, rank, count, index }: Props) {
   }, [live]);
 
   // Build the 3D object once fonts are ready (stickers bake text into textures).
+  // If the font CDN was slow and we built with fallback faces, rebuild once they land.
   useEffect(() => {
     let cancelled = false;
     let built: BuiltObject | null = null;
     const small = Math.min(window.innerWidth, window.innerHeight) < 640;
+    const build = () => {
+      if (cancelled) return;
+      const next = def.build({
+        renderer: gl,
+        textureScale: small ? 0.7 : 1,
+        maxAnisotropy: gl.capabilities.getMaxAnisotropy(),
+      });
+      if (built) {
+        live.inner.remove(built.root);
+        built.dispose();
+      } else {
+        live.age = 0;
+      }
+      built = next;
+      live.inner.add(next.root);
+      live.built = next;
+    };
     ensureFonts().then(() => {
       if (cancelled) return;
-      enqueueBuild(() => {
-        if (cancelled) return;
-        built = def.build({
-          renderer: gl,
-          textureScale: small ? 0.7 : 1,
-          maxAnisotropy: gl.capabilities.getMaxAnisotropy(),
-        });
-        live.inner.add(built.root);
-        live.built = built;
-        live.age = 0;
-      });
+      const hadFonts = fontsLoaded();
+      enqueueBuild(build);
+      if (!hadFonts) whenFontsLoaded().then(() => !cancelled && enqueueBuild(build));
     });
     return () => {
       cancelled = true;

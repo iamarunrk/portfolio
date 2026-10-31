@@ -91,7 +91,7 @@ vec3 baseColor(vec2 uv) {
 vec3 baseColor(vec2 uv) {
   vec2 p = centered(uv);
   float r = length(p);
-  float a = atan(p.y, p.x) - uAngle - uTime * 0.25;
+  float a = atan(p.y, p.x + 1e-7) - uAngle - uTime * 0.25;
   a += uDetail * 5.0 * r;
   float t = a / TAU;
   // Box-filter the cyclic palette over an angular window that widens toward the centre:
@@ -219,7 +219,7 @@ vec3 lmEnv(float s, float w) {
   float fl = smoothstep(-0.78 - w, -0.78 + w, s) - smoothstep(-0.62 - w, -0.62 + w, s);
   ground = mix(ground, mid, fl * 0.55);
   vec3 c = mix(ground, sky, smoothstep(-w, w, s));
-  c += glint * 0.5 * exp(-pow((s - 0.03) / (w * 1.8 + 0.01), 2.0));
+  c += glint * 0.5 * gauss(s - 0.03, w * 1.8 + 0.01);
   return c;
 }
 vec3 baseColor(vec2 uv) {
@@ -262,7 +262,7 @@ vec3 baseColor(vec2 uv) {
   float gloss = uAmount;
   float spec = pow(nh, mix(18.0, 160.0, gloss)) * mix(0.7, 1.7, gloss);
   float bloom = pow(nh, 6.0) * 0.45;
-  float sheen = pow(1.0 - n.z, 1.5) * 0.9;
+  float sheen = pow(max(1.0 - n.z, 0.0), 1.5) * 0.9;
   float ao = mix(0.55, 1.0, smoothstep(-1.4, 1.2, h));
   vec3 dyeDark = toLinear(uCol[0]);
   vec3 dye = toLinear(uCol[1]);
@@ -295,7 +295,7 @@ vec3 baseColor(vec2 uv) {
 vec3 baseColor(vec2 uv) {
   vec2 p = centered(uv) / safeScale();
   float r = length(p) + 1e-4;
-  float a = atan(p.y, p.x) + uAngle;
+  float a = atan(p.y, p.x + 1e-7) + uAngle;
   float arms = floor(1.0 + uAmount * 4.99);
   float twist = mix(0.5, 3.6, uDetail);
   float t = uTime * 0.25;
@@ -377,7 +377,7 @@ vec3 baseColor(vec2 uv) {
   vec3 R = reflect(-L, n);
   float gloss = uAmount;
   float spec = pow(clamp(R.z, 0.0, 1.0), mix(18.0, 140.0, gloss)) * mix(0.35, 1.5, gloss);
-  float fres = pow(1.0 - n.z, 3.0);
+  float fres = pow(max(1.0 - n.z, 0.0), 3.0);
   vec3 body = clamp(oklabToLin(lab), 0.0, 1.0);
   vec3 col = body * (0.32 + 0.78 * diff) + body * body * 0.35 * (1.0 - diff);
   col += fres * mix(body, vec3(1.0), 0.45) * 0.55;
@@ -395,7 +395,7 @@ vec3 baseColor(vec2 uv) {
 vec3 baseColor(vec2 uv) {
   vec2 p = centered(uv) / safeScale();
   float r = length(p) + 1e-5;
-  float a = atan(p.y, p.x) + uAngle + uTime * 0.12;
+  float a = atan(p.y, p.x + 1e-7) + uAngle + uTime * 0.12;
   float N = 2.0 * floor(mix(4.0, 16.0, uDetail) + 0.5);
   float s = a / TAU * N * 0.5;
   float fw = (N * 0.5 / TAU) / r * pxSize() / safeScale() * 1.4;
@@ -549,8 +549,8 @@ vec3 baseColor(vec2 uv) {
   vec2 fp = vec2(kp.x * 0.5, horizon - 0.1);
   vec2 fd = (p - fp) * vec2(0.65, 2.0) / safeScale();
   float pool = exp(-dot(fd, fd) / (0.09 * soft)) * (1.0 - wall);
-  float fillL = exp(-pow((p.x + 0.6 * fr.x) / (0.38 * soft), 2.0));
-  float fillR = exp(-pow((p.x - 0.6 * fr.x) / (0.38 * soft), 2.0));
+  float fillL = gauss(p.x + 0.6 * fr.x, 0.38 * soft);
+  float fillR = gauss(p.x - 0.6 * fr.x, 0.38 * soft);
   float back = exp(-max(p.y - horizon, 0.0) * 3.2 / soft) * wall;
   vec2 ap = vec2(sin(t * 0.7 + 1.0) * 0.4, cos(t * 0.5) * 0.15 + 0.1) * fr;
   float amb = exp(-dot(p - ap, p - ap) * 2.5) * step(0.0001, abs(uTime)) * 0.15;

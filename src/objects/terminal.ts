@@ -177,33 +177,33 @@ function drawScreen(st: ScreenState, t: number): void {
   c.fillText('MEM 640K OK', W - 24, 18);
   c.textAlign = 'left';
   // logo: a chunky zero ring + wordmark (where the reference has its brand mark)
-  const lx = 118;
-  const ly = 132;
+  const lx = 112;
+  const ly = 146;
   c.strokeStyle = GREEN;
-  c.lineWidth = 22;
+  c.lineWidth = 26;
   c.beginPath();
-  c.ellipse(lx, ly, 46, 58, 0, 0, Math.PI * 2);
+  c.ellipse(lx, ly, 54, 68, 0, 0, Math.PI * 2);
   c.stroke();
-  c.lineWidth = 10;
+  c.lineWidth = 12;
   c.beginPath();
-  c.moveTo(lx - 30, ly + 40);
-  c.lineTo(lx + 30, ly - 40);
+  c.moveTo(lx - 36, ly + 48);
+  c.lineTo(lx + 36, ly - 48);
   c.stroke();
-  text(c, 'Once Upon OS', lx + 82, ly + 26, { size: 66, family: FONTS.ui, weight: 700, color: GREEN, maxWidth: W - lx - 110 });
+  text(c, 'Once Upon OS', lx + 92, ly + 30, { size: 84, family: FONTS.ui, weight: 700, color: GREEN, maxWidth: W - lx - 116 });
   // typing area
   const cps = 14;
   const pause = 1.1;
   const total = LINES.reduce((a, l) => a + l.length / cps + pause, 0) + 1.6;
   const tt = t % total;
   let acc = 0;
-  c.font = font(28, FONTS.spaceMono, 700);
+  c.font = font(25, FONTS.spaceMono, 700);
   c.fillStyle = GREEN;
   let cursorX = 40;
-  let cursorY = 238;
+  let cursorY = 262;
   for (let i = 0; i < LINES.length; i++) {
     const line = LINES[i].replace(/_$/, '');
     const dur = line.length / cps;
-    const y = 238 + i * 40;
+    const y = 262 + i * 36;
     if (tt < acc) break;
     const n = Math.min(line.length, Math.floor((tt - acc) * cps));
     const shown = line.slice(0, n);
@@ -212,7 +212,7 @@ function drawScreen(st: ScreenState, t: number): void {
     cursorY = y;
     acc += dur + pause;
   }
-  if (Math.floor(t * 2.2) % 2 === 0) c.fillRect(cursorX, cursorY + 2, 16, 28);
+  if (Math.floor(t * 2.2) % 2 === 0) c.fillRect(cursorX, cursorY + 2, 14, 25);
   c.restore();
   // scanlines + vignette
   c.fillStyle = 'rgba(0,0,0,0.22)';

@@ -33,7 +33,9 @@ halftone, pixelate, CRT, dither) and **Effects** (grain, vignette, speed).
 - All 3D objects are procedural (geometry + canvas-painted sticker textures). No model files.
 - The background is a two-pass WebGL2 shader stack (base generator → glass material → grain),
   modelled on the component catalogue of [shaders.com](https://shaders.com) and rendered in the same
-  GPU context as the 3D objects, so glass objects refract it.
+  GPU context as the 3D objects, so glass objects refract it. 20 generators (solid, linear, radial,
+  conic, mesh, flow, aurora, liquid metal, satin, plasma, swirl, waves, goo, sunburst, holo, checker,
+  dot grid, halftone, dither, studio) × 14 glass materials, all with palette and knobs.
 
 ## Scripts
 
@@ -64,6 +66,16 @@ src/
   bg/                     background engine, GLSL, presets and metadata
   ui/                     bottom island, top bar, hint
 ```
+
+## Dev pages
+
+Run `npm run dev`, then open:
+
+| Page | What it's for | Handy params |
+| --- | --- | --- |
+| `/dev/objects.html` | the five toys side by side under studio light | `?only=can`, `?bg=light`, `?rot=y`, `?yaw=30&pitch=10` |
+| `/dev/bg.html` | the background engine on its own | `?base=mesh&mat=fluted`, `?preset=<id>`, `?grid=bases`, `?grid=materials` |
+| `/dev/ui.html` | island, top bar and hint over a live background | `?fresh` (first visit), `?nogl` |
 
 ## Adding a new toy
 

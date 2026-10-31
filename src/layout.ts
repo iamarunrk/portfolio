@@ -54,21 +54,25 @@ export interface LayoutSlot {
   tilt?: [number, number, number];
 }
 
-/** Composition around the headline. Landscape: corners + top centre; portrait: above & below the title. */
+/**
+ * Composition around the headline. Landscape: corners + top centre; portrait: above & below the title.
+ * `s` balances visual weight (flat bags read smaller than chunky cans at the same bounding sphere);
+ * `tilt` adds a little yaw/roll so toys near the edges still face the viewer through the perspective camera.
+ */
 const LANDSCAPE: Record<ObjectKind, LayoutSlot> = {
-  can: { nx: -0.75, ny: 0.4, s: 1.0, tilt: [0, 0, 0.12] },
-  terminal: { nx: 0.06, ny: 0.62, s: 1.08 },
-  pedal: { nx: 0.76, ny: 0.4, s: 0.96, tilt: [0, 0, -0.1] },
-  jar: { nx: -0.66, ny: -0.5, s: 0.98 },
-  chips: { nx: 0.7, ny: -0.47, s: 1.04, tilt: [0, 0, 0.14] },
+  can: { nx: -0.75, ny: 0.4, s: 0.92, tilt: [0, 0.1, 0.1] },
+  terminal: { nx: 0.04, ny: 0.62, s: 1.12 },
+  pedal: { nx: 0.76, ny: 0.4, s: 1.0, tilt: [0, -0.42, -0.08] },
+  jar: { nx: -0.67, ny: -0.5, s: 1.0, tilt: [0, 0.12, 0] },
+  chips: { nx: 0.7, ny: -0.47, s: 1.2, tilt: [0, -0.1, 0.1] },
 };
 
 const PORTRAIT: Record<ObjectKind, LayoutSlot> = {
-  can: { nx: -0.58, ny: 0.66, s: 0.95, tilt: [0, 0, 0.14] },
-  terminal: { nx: 0.08, ny: 0.4, s: 1.05 },
-  pedal: { nx: 0.6, ny: 0.72, s: 0.9, tilt: [0, 0, -0.12] },
-  jar: { nx: -0.55, ny: -0.52, s: 0.95 },
-  chips: { nx: 0.56, ny: -0.6, s: 1.0, tilt: [0, 0, 0.12] },
+  can: { nx: -0.56, ny: 0.66, s: 0.9, tilt: [0, 0.08, 0.12] },
+  terminal: { nx: 0.06, ny: 0.4, s: 1.08 },
+  pedal: { nx: 0.58, ny: 0.72, s: 0.94, tilt: [0, -0.32, -0.1] },
+  jar: { nx: -0.54, ny: -0.52, s: 0.98, tilt: [0, 0.1, 0] },
+  chips: { nx: 0.55, ny: -0.6, s: 1.14, tilt: [0, -0.08, 0.1] },
 };
 
 export function defaultSlot(kind: ObjectKind, frame: CanvasFrame): LayoutSlot {

@@ -39,7 +39,21 @@ const FACES_TO_LOAD = [
   '500 64px "Geist Mono"',
 ];
 
+let loadPromise: Promise<void> | null = null;
 let fontsPromise: Promise<void> | null = null;
+let loaded = false;
+
+function startLoad(): Promise<void> {
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      if (typeof document === 'undefined' || !('fonts' in document)) return;
+      await Promise.allSettled(FACES_TO_LOAD.map((f) => document.fonts.load(f, 'AaZz09')));
+    })().then(() => {
+      loaded = true;
+    });
+  }
+  return loadPromise;
+}
 
 /**
  * Resolves once all faces are loaded, or after `timeoutMs` (whichever comes first),
@@ -47,11 +61,17 @@ let fontsPromise: Promise<void> | null = null;
  */
 export function ensureFonts(timeoutMs = 3500): Promise<void> {
   if (fontsPromise) return fontsPromise;
-  const load = (async () => {
-    if (typeof document === 'undefined' || !('fonts' in document)) return;
-    await Promise.allSettled(FACES_TO_LOAD.map((f) => document.fonts.load(f, 'AaZz09')));
-  })();
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
-  fontsPromise = Promise.race([load, timeout]);
+  fontsPromise = Promise.race([startLoad(), timeout]);
   return fontsPromise;
+}
+
+/** True once every face has actually finished loading (not just timed out). */
+export function fontsLoaded(): boolean {
+  return loaded;
+}
+
+/** Resolves when every face has really loaded (no timeout). */
+export function whenFontsLoaded(): Promise<void> {
+  return startLoad();
 }

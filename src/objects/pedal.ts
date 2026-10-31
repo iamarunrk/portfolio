@@ -14,7 +14,7 @@ import { FONTS, DEG, text, sticker, starPath, circlePath, rrPath, fillPath, smal
 
 const BW = 1.0;
 const BH = 1.06;
-const BD = 0.5;
+const BD = 0.6;
 const BR = 0.17;
 const ZF = BD / 2;
 
@@ -28,7 +28,7 @@ const KNOBS = [
   { id: 'BOUNCE', x: 0.05, y: 0.02, r: 0.235, angle: 38 * DEG, big: true },
 ];
 const TOGGLE = { x: -0.03, y: 0.355 };
-const LED = { x: 0.1, y: 0.235 };
+const LED = { x: 0.108, y: 0.445 };
 const FOOT = { x: 0.2, y: -0.335 };
 const PANEL = { top: -0.115, bottom: -0.405 };
 const JACK_Y = -0.03;
@@ -349,9 +349,9 @@ function toggleSwitch(): THREE.BufferGeometry {
     ],
     { segments: 20 },
   );
-  bat.scale(1, 0.7, 1);
+  bat.scale(1, 0.58, 1);
   bat.rotateX(-0.5);
-  bat.rotateY(-0.6);
+  bat.rotateY(0.7);
   bat.translate(0, 0.075, 0);
   parts.push(bat);
   const g = merge(parts);
@@ -608,6 +608,6 @@ export const pedal: ObjectDef = {
   kind: 'pedal',
   name: 'Motion Fuzz',
   tagline: 'five years of keyframes',
-  defaultRotation: [-0.08, 0.62, 0.13],
+  defaultRotation: [-0.08, 0.72, 0.13],
   build,
 };

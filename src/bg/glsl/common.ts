@@ -124,6 +124,8 @@ vec3 oklabToLin(vec3 c) {
 }
 vec3 srgbToOklab(vec3 c) { return linToOklab(toLinear(c)); }
 vec3 oklabToSrgb(vec3 c) { return toSrgb(clamp(oklabToLin(c), 0.0, 1.0)); }
+/** Gaussian bump: exp(-(x/w)^2) without pow() on negative bases (undefined in GLSL). */
+float gauss(float x, float w) { float k = x / w; return exp(-k * k); }
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3 screenBlend(vec3 a, vec3 b) { return 1.0 - (1.0 - a) * (1.0 - clamp(b, 0.0, 1.0)); }
 `;

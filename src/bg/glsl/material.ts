@@ -148,8 +148,8 @@ vec3 material(vec2 uv) {
   // light transmitted through the reed concentrates in a thin line near the lit edge: bright over
   // bright content, barely there over dark content (as in real reeded glass)
   float sw = max(0.055, 1.4 * pxX);
-  float spec = exp(-pow((x - sx) / sw, 2.0)) * 0.9 + exp(-pow((x - sx - 0.18) / 0.22, 2.0)) * 0.06;
-  float rim = exp(-pow((x - 0.9) / max(0.035, 1.2 * pxX), 2.0)) * 0.22;
+  float spec = gauss(x - sx, sw) * 0.9 + gauss(x - sx - 0.18, 0.22) * 0.06;
+  float rim = gauss(x - 0.9, max(0.035, 1.2 * pxX)) * 0.22;
   float k = (0.16 + 0.84 * smoothstep(0.04, 0.7, l)) * uHighlight;
   c = screenBlend(c, vec3(1.0, 0.95, 0.86) * spec * k + vec3(rim * k));
   return applyTint(c);
@@ -323,7 +323,7 @@ vec3 material(vec2 uv) {
   vec2 cp = p * k0 * 0.5;
   float c1 = 1.0 - abs(snoise(cp + vec2(t * 0.25, t * 0.15) + grad * 0.25));
   float c2 = 1.0 - abs(snoise(cp * 1.37 - vec2(t * 0.2, -t * 0.27) + 4.0));
-  float caus = pow(c1, 9.0) + pow(c2, 9.0) * 0.6;
+  float caus = pow(max(c1, 0.0), 9.0) + pow(max(c2, 0.0), 9.0) * 0.6;
   c += uHighlight * 0.32 * caus * (0.3 + 0.7 * luma(c));
   vec3 nrm = normalize(vec3(-grad * 0.5, 1.0));
   float glint = pow(clamp(dot(nrm, normalize(vec3(-0.35, 0.55, 0.75))), 0.0, 1.0), 70.0);
@@ -410,7 +410,7 @@ vec3 material(vec2 uv) {
   float t = uTime * 0.12;
   float lk = dot(p, normalize(vec2(0.82, 0.57))) * 0.8 + t + x * 0.12;
   vec3 rainbow = 0.5 + 0.5 * cos(TAU * (lk * 1.6 + vec3(0.0, 0.33, 0.67)));
-  float leak = smoothstep(0.15, 1.0, sin(lk * 2.1 + 0.6)) * (0.55 + 0.45 * smoothstep(0.25, 0.0, min(x, 1.0 - x)));
+  float leak = smoothstep(0.15, 1.0, sin(lk * 2.1 + 0.6)) * (0.55 + 0.45 * (1.0 - smoothstep(0.0, 0.25, min(x, 1.0 - x))));
   c = screenBlend(c, rainbow * leak * uHighlight * 0.6);
   float ePx = min(x, 1.0 - x) * Wf / pxUnit();
   float edgeLine = 1.0 - smoothstep(0.0, 1.6 * max(uDpr, 1.0), ePx);

@@ -4,4 +4,3 @@ dist-preview
 .DS_Store
 *.log
 .vite
-.mocks

@@ -35,6 +35,8 @@ const SHORTEN = 2.5;
 const PRINT_Y0 = 0.95;
 const PRINT_Y1 = 10.42 - SHORTEN;
 const LID_Y = 11.04 - SHORTEN;
+/** Rotation of the tab + mouth around the can axis (radians, from -Z towards +X). */
+const MOUTH_TURN = -0.32;
 
 const BLUE = '#2456f2';
 const BLUE_DARK = '#1a3fd0';
@@ -228,10 +230,10 @@ function paintLabel(s: Surface): void {
   ringText(c, 'ZERO SUGAR · INFINITE IDEAS · FOUNDER FUEL · SHIP DAILY · ', W, (BAND0 + BAND1) / 2 + 2, font(36, FONTS.archivoBlack, 400, true), NAVY);
 
   // ---------------- front: flat white wordmark where the reference has its brand mark
-  const fx = X(-30);
-  text(c, 'ZEROS', fx + 10, 452, { size: 232, maxWidth: 720, family: FONTS.bagel, align: 'center', color: hexA('#7fbfff', 0.75) });
-  text(c, 'ZEROS', fx, 440, { size: 232, maxWidth: 720, family: FONTS.bagel, align: 'center', gradient: ['#ffffff', '#cfeaff'] });
-  text(c, 'founder fuel', fx - 20, 540, { size: 64, family: FONTS.ui, weight: 600, align: 'center', color: '#ffffff', tracking: 4 });
+  const fx = X(-14);
+  text(c, 'ZEROS', fx + 10, 462, { size: 262, maxWidth: 760, family: FONTS.bagel, align: 'center', color: hexA('#7fbfff', 0.75) });
+  text(c, 'ZEROS', fx, 450, { size: 262, maxWidth: 760, family: FONTS.bagel, align: 'center', gradient: ['#ffffff', '#cfeaff'] });
+  text(c, 'founder fuel', fx - 10, 552, { size: 66, family: FONTS.ui, weight: 600, align: 'center', color: '#ffffff', tracking: 4 });
 
   // right: white squiggle lines + small print panel
   squiggles(c, X(22), X(104), 300, 6, 32, hexA('#ffffff', 0.85), 6, 3);
@@ -359,11 +361,13 @@ function paintLidBump(s: Surface): void {
   }
   // raised bead around the open mouth on the far side (texture up = -z = back)
   c.save();
-  c.translate(L.cx, L.cy - 1.12 * k);
+  c.translate(L.cx, L.cy);
+  c.rotate(-MOUTH_TURN);
+  c.translate(0, -1.12 * k);
   // mouthPath's narrow end (+y = texture down) points at the rivet
   c.filter = `blur(${0.06 * k}px)`;
   c.beginPath();
-  mouthPath(c, k * 1.26);
+  mouthPath(c, k * 1.38);
   c.strokeStyle = 'rgb(190,190,190)';
   c.lineWidth = 0.34 * k;
   c.stroke();
@@ -443,6 +447,7 @@ function build(bctx: ObjectBuildContext) {
   const baseGeo = lathe(bottomP, { segments: SEG, uv: baseUV });
   const tab = flatUV(pullTab(), 0.5, 0.98);
   place(tab, [0, LID_Y + 0.04, -0.1], [-0.14, 0, 0]);
+  tab.rotateY(MOUTH_TURN);
   const rivet = flatUV(new THREE.SphereGeometry(0.2, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), 0.5, 0.98);
   place(rivet, [0, LID_Y + 0.03, 0], [0, 0, 0], [1, 0.5, 1]);
   const aluParts = [topGeo, baseGeo, tab, rivet];
@@ -461,11 +466,11 @@ function build(bctx: ObjectBuildContext) {
 
   // ---------- the open mouth: dark rim + blue drink, just above the recessed panel
   const outer = new THREE.Shape();
-  mouthPath(outer, 1.18);
+  mouthPath(outer, 1.3);
   const innerShape = new THREE.Shape();
-  mouthPath(innerShape, 1.0);
+  mouthPath(innerShape, 1.12);
   const mo = tint(new THREE.ShapeGeometry(outer, 16), '#06133f');
-  const mi = tint(new THREE.ShapeGeometry(innerShape, 16), '#2f6bff');
+  const mi = tint(new THREE.ShapeGeometry(innerShape, 16), '#2a6bff');
   mi.translate(0, -0.05, 0.004);
   const mouth = merge([mo, mi]);
   mo.dispose();
@@ -474,7 +479,9 @@ function build(bctx: ObjectBuildContext) {
   mouth.rotateX(-Math.PI / 2);
   mouth.rotateY(Math.PI);
   mouth.translate(0, LID_Y + 0.005, -1.12);
-  const mouthMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02 });
+  mouth.rotateY(MOUTH_TURN);
+  // the drink: saturated blue, only a soft sheen so it doesn't mirror the top softbox
+  const mouthMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.42, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.3 });
   inner.add(new THREE.Mesh(mouth, mouthMat));
 
   // ---------- peeling light-blue warning sticker on the left side
@@ -503,7 +510,7 @@ function build(bctx: ObjectBuildContext) {
     k.restore();
   }
   const sheetTex = sheet.surf.colorTexture();
-  const peel = stickerPatch(surfaces.cylinder(R), -76 * DEG * R, 5.5, 3.7, 2.47, 30 * DEG, cell.uv, {
+  const peel = stickerPatch(surfaces.cylinder(R), -92 * DEG * R, 6.05, 3.5, 2.33, 34 * DEG, cell.uv, {
     nx: 18,
     ny: 10,
     offset: 0.015,
@@ -522,6 +529,6 @@ export const sodaCan: ObjectDef = {
   kind: 'can',
   name: 'Zeros Soda',
   tagline: 'founder fuel, zero sugar',
-  defaultRotation: [0.84, 0, -0.7],
+  defaultRotation: [0.86, 0, -0.7],
   build,
 };

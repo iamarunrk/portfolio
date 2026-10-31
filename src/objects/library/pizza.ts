@@ -163,7 +163,7 @@ function cheeseY(r: number, phi: number): number {
   const fade = THREE.MathUtils.smoothstep(dEdge, 0, 0.8);
   const x = r * Math.sin(phi);
   const z = r * Math.cos(phi);
-  const lump = Math.max(0, fbm(cheeseNoise, x * 0.5, 0.3, z * 0.5, 3) + 0.15) * 0.24 + Math.max(0, cheeseNoise(x * 1.6, 2.1, z * 1.6)) * 0.07;
+  const lump = Math.max(0, fbm(cheeseNoise, x * 0.5, 0.3, z * 0.5, 3) + 0.15) * 0.34 + Math.max(0, cheeseNoise(x * 1.6, 2.1, z * 1.6)) * 0.1 + Math.max(0, cheeseNoise(x * 3.4, 5.3, z * 3.4) - 0.2) * 0.07;
   const pm = pepMask(x, z);
   const nearCrust = THREE.MathUtils.smoothstep(r, CHEESE_R - 1.2, CHEESE_R) * 0.12;
   return TOP_Y + 0.006 + fade * (0.07 + lump * (1 - pm) + nearCrust);
@@ -202,7 +202,7 @@ function paintCheese(s: Surface): void {
   const n2 = valueNoise3(5);
   for (let i = 0; i <= 120; i++) {
     const phi = PHI0 - 0.05 + ((PHI_LEN + 0.1) * i) / 120;
-    const rb = CHEESE_R - 0.5 - 0.4 * (0.5 + 0.5 * n2(phi * 22, 0.5, 1.3)) - 0.22 * Math.max(0, n2(phi * 61, 4.1, 0.2));
+    const rb = CHEESE_R - 0.25 - 0.32 * (0.5 + 0.5 * n2(phi * 22, 0.5, 1.3)) - 0.2 * Math.max(0, n2(phi * 61, 4.1, 0.2));
     const [px, py] = P(rb * Math.sin(phi), rb * Math.cos(phi));
     if (i === 0) c.moveTo(px, py);
     else c.lineTo(px, py);
@@ -325,6 +325,9 @@ function paintCheese(s: Surface): void {
     }
   });
   grain(c, 0, 0, s.w, s.h, 5000, 0.05, 31);
+  // melted 'goo' swatch for the drips (top-left corner lies outside the slice)
+  c.fillStyle = '#f8cf63';
+  c.fillRect(0, 0, s.w * 0.03, s.h * 0.03);
 }
 
 // ------------------------------------------------------------------ bread
@@ -369,12 +372,12 @@ function paintBread(s: Surface): void {
   // --- crust bead (rows 461..1413). Angle along the bead: -90 (underside) .. 150 (inner slope)
   const yOf = (deg: number) => yB + ((deg + 90) / 240) * (yC - yB);
   const g1 = c.createLinearGradient(0, yB, 0, yC);
-  g1.addColorStop(0, '#dda35a');
-  g1.addColorStop((yOf(-20) - yB) / (yC - yB), '#d08a42');
-  g1.addColorStop((yOf(40) - yB) / (yC - yB), '#bf6e2b');
-  g1.addColorStop((yOf(90) - yB) / (yC - yB), '#b36328');
-  g1.addColorStop((yOf(128) - yB) / (yC - yB), '#d59545');
-  g1.addColorStop(1, '#e6b065');
+  g1.addColorStop(0, '#e6b46c');
+  g1.addColorStop((yOf(-20) - yB) / (yC - yB), '#dc9a4c');
+  g1.addColorStop((yOf(40) - yB) / (yC - yB), '#c6742d');
+  g1.addColorStop((yOf(85) - yB) / (yC - yB), '#a9541e');
+  g1.addColorStop((yOf(128) - yB) / (yC - yB), '#cf8a3d');
+  g1.addColorStop(1, '#e2a95e');
   c.fillStyle = g1;
   c.fillRect(0, yB, ATLAS_W, yC - yB);
   // mottling
@@ -390,7 +393,7 @@ function paintBread(s: Surface): void {
     c.fillRect(px - rad, py - rad, rad * 2, rad * 2);
   }
   // charred blisters with pale rims, mostly on the outer face and top of the bead
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < 110; i++) {
     const deg = -25 + Math.pow(r(), 0.9) * 140;
     const px = r() * ATLAS_W;
     const py = yOf(deg) + (r() - 0.5) * 30;
@@ -442,14 +445,18 @@ function paintBread(s: Surface): void {
       b.fill();
     }
   });
-  // --- inner slope + hidden top: sauce
-  c.fillStyle = '#b8341c';
-  c.fillRect(0, yC, ATLAS_W, CRUST_H - yC + 40);
-  const gs = c.createLinearGradient(0, yC - 50, 0, yC + 10);
-  gs.addColorStop(0, 'rgba(184,52,28,0)');
-  gs.addColorStop(1, 'rgba(184,52,28,0.9)');
+  // --- inner slope + hidden top: baked crust edge with a little caramelised sauce
+  const gs = c.createLinearGradient(0, yC - 30, 0, CRUST_H);
+  gs.addColorStop(0, '#e2ab62');
+  gs.addColorStop(0.35, '#c9813b');
+  gs.addColorStop(1, '#a4401f');
   c.fillStyle = gs;
-  c.fillRect(0, yC - 50, ATLAS_W, 60);
+  c.fillRect(0, yC - 30, ATLAS_W, CRUST_H - yC + 70);
+  for (let i = 0; i < 40; i++) {
+    const px = r() * ATLAS_W;
+    const py = yC + 10 + r() * (CRUST_H - yC);
+    fillPath(c, ellipsePath(px, py, 14 + r() * 40, 4 + r() * 9, (r() - 0.5) * 0.4), 'rgba(170,48,22,0.55)');
+  }
 
   // --- cut face: dough / sauce / cheese layers and the airy crust
   const FX = (rr: number) => (rr / R) * ATLAS_W;
@@ -498,11 +505,11 @@ function paintPepperoni(s: Surface): void {
   const r = rng(77);
   const cx = W / 2;
   const g = c.createRadialGradient(cx, cx, 0, cx, cx, W / 2);
-  g.addColorStop(0, '#d0461f');
-  g.addColorStop(0.35, '#b42a1c');
-  g.addColorStop(0.78, '#a0221a');
-  g.addColorStop(0.9, '#6d150f');
-  g.addColorStop(1, '#3c0b08');
+  g.addColorStop(0, '#e2532c');
+  g.addColorStop(0.4, '#cf3a22');
+  g.addColorStop(0.76, '#bb2c1c');
+  g.addColorStop(0.9, '#7e1a10');
+  g.addColorStop(1, '#3f0c07');
   c.fillStyle = g;
   c.fillRect(0, 0, W, W);
   for (let i = 0; i < 70; i++) {
@@ -648,8 +655,8 @@ function build(bctx: ObjectBuildContext) {
   const cheese = new Surface(Math.round(2 * HW * ck), Math.round(R * ck), bctx, { bump: { base: 0.5, density: 0.5 }, mask: { rough: 0.42, metal: 0, density: 0.5 } });
   paintCheese(cheese);
   const sheet = parametric(
-    58,
-    30,
+    84,
+    40,
     (u, v, out) => {
       const rr = CHEESE_R * u;
       const phi = PHI0 + PHI_LEN * v;
@@ -672,6 +679,12 @@ function build(bctx: ObjectBuildContext) {
       const [u, v] = cheeseUV(pos.getX(i), pos.getZ(i));
       uv.setXY(i, u, v);
     }
+    return g;
+  };
+  // drips use the warm 'goo' swatch painted in the corner of the cheese print
+  const gooUV = (g: THREE.BufferGeometry) => {
+    const uv = g.getAttribute('uv') as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, 0.012, 0.988);
     return g;
   };
   const edges: [number, number][] = [
@@ -700,16 +713,31 @@ function build(bctx: ObjectBuildContext) {
       pts.push(dir.clone().multiplyScalar(rr).setY(TOP_Y + 0.012).addScaledVector(out, 0.025));
     }
     cheeseParts.push(planarUV(sweep(pts, (t) => (0.13 + 0.05 * beadNoise(t * 14 + ei * 7, 0.5, 0.5)) * Math.min(1, t * 12, (1 - t) * 10), 8)));
+    // drips run down the cut face and slide towards the tip (the slice is held crust-up)
     for (const [rr, len] of dripAt[ei]) {
-      const p0 = dir.clone().multiplyScalar(rr).setY(TOP_Y + 0.02);
       const dpts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 10; i++) {
-        const t = i / 10;
-        dpts.push(p0.clone().setY(TOP_Y + 0.02 - t * len).addScaledVector(out, 0.08 + 0.07 * t));
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12;
+        const along = rr - len * 0.85 * t * t;
+        dpts.push(dir.clone().multiplyScalar(along).setY(TOP_Y + 0.04 - len * Math.sin(t * Math.PI * 0.5)).addScaledVector(out, 0.1 + 0.08 * t));
       }
-      cheeseParts.push(planarUV(sweep(dpts, capped(0.2, 0.32, false, true, (t) => 0.7 + 0.55 * t), 10)));
+      cheeseParts.push(gooUV(sweep(dpts, capped(0.21, 0.3, false, true, (t) => 0.75 + 0.5 * t), 10)));
     }
   });
+  // a fat drip hanging off the tip
+  {
+    const tip: THREE.Vector3[] = [];
+    const ctrl = [
+      new THREE.Vector3(0.05, TOP_Y + 0.02, -1.1),
+      new THREE.Vector3(0.0, TOP_Y + 0.06, -0.1),
+      new THREE.Vector3(-0.05, TOP_Y - 0.25, 0.4),
+      new THREE.Vector3(-0.1, TOP_Y - 0.85, 0.7),
+      new THREE.Vector3(-0.12, TOP_Y - 1.45, 0.82),
+    ];
+    const curve = new THREE.CatmullRomCurve3(ctrl);
+    for (let i = 0; i <= 24; i++) tip.push(curve.getPoint(i / 24));
+    cheeseParts.push(gooUV(sweep(tip, capped(0.34, 0.22, false, true, (t) => 0.55 + 0.7 * Math.pow(t, 2)), 12)));
+  }
   const cheeseGeo = mergeSimple(cheeseParts);
   cheeseParts.forEach((g) => g.dispose());
   warp(cheeseGeo, bend);
@@ -910,7 +938,7 @@ export const pizza: LibraryDef = {
   name: 'Pizza Slice',
   tagline: 'one more slice, one more feature',
   category: 'food',
-  defaultRotation: [-0.62, 0.32, 0.36],
+  defaultRotation: [-0.36, -0.2, 0.36],
   build,
 };
 export default pizza;

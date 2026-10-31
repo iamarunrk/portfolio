@@ -82,6 +82,13 @@ function faceZ(x: number, y: number): number {
   return capZ(rhoAt(x, y));
 }
 
+/** z of the (slightly convex) CRT glass at (x, y); falls back to the bezel just outside it. */
+function screenZ(x: number, y: number): number {
+  const qx = x / SCR.hw;
+  const qy = (y - SCR.cy) / SCR.hh;
+  return faceZ(x, y) + 0.04 + 0.42 * Math.max(0, 1 - qx * qx) * Math.max(0, 1 - qy * qy);
+}
+
 /** Point on a side of the body: a = along the side (right: backwards, left: forwards), b = height. */
 function sidePoint(side: 1 | -1) {
   return (a: number, b: number, out: THREE.Vector3): THREE.Vector3 => {
@@ -293,7 +300,7 @@ function drawScreen(st: ScreenState, t: number): void {
     c.textAlign = 'left';
   };
   icon(W - 80, 110, 'Zeros HD', 'hd');
-  icon(W - 80, Hh - 110, 'Trash', 'trash');
+  icon(80, Hh - 120, 'Trash', 'trash');
 
   // hello
   const hx = W * 0.47;
@@ -570,11 +577,7 @@ function build(bctx: ObjectBuildContext) {
     SCR.hw,
     SCR.hh,
     7,
-    (x, y) => {
-      const qx = x / SCR.hw;
-      const qy = (y - SCR.cy) / SCR.hh;
-      return faceZ(x, y) + 0.04 + 0.42 * Math.max(0, 1 - qx * qx) * Math.max(0, 1 - qy * qy);
-    },
+    screenZ,
     { cy: SCR.cy, nr: 12, nphi: 96 },
   );
   const screenMat = new THREE.MeshPhysicalMaterial({
@@ -589,7 +592,7 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(screenGeo, screenMat));
 
   // ---------- stickers
-  const sheet = new StickerSheet(1024, 512, bctx, 14);
+  const sheet = new StickerSheet(1024, 768, bctx, 14);
   const cZeros = sheet.alloc(330, 140);
   inCell(sheet, cZeros, (c) => {
     sticker(c, 0, 0, 0, rrPath(-150, -56, 300, 112, 56), { border: 9, fill: '#d7ff3a', shadow: 0.6 }, (k) => {
@@ -632,6 +635,20 @@ function build(bctx: ObjectBuildContext) {
       smallPrint(k, ['MHz · G3'], 64, 8, 15, '#111', { align: 'center', weight: 700 });
     });
   });
+  const cNote = sheet.alloc(230, 230);
+  inCell(sheet, cNote, (c) => {
+    sticker(c, 0, 0, 0, rrPath(-108, -108, 216, 216, 3), { border: 0, fill: '#ffe45c', shadow: 0.55, rough: 0.6 }, (k) => {
+      const g = k.createLinearGradient(0, -108, 0, 108);
+      g.addColorStop(0, 'rgba(255,255,255,0.18)');
+      g.addColorStop(0.2, 'rgba(255,255,255,0)');
+      g.addColorStop(1, 'rgba(160,110,0,0.16)');
+      fillPath(k, rrPath(-108, -108, 216, 216, 3), g);
+      fillPath(k, rrPath(-108, -108, 216, 34, 0), 'rgba(230,190,40,0.35)');
+      text(k, 'TODO:', -84, -40, { size: 38, family: FONTS.marker, color: '#1d2a6b' });
+      text(k, '☑ say hello', -84, 12, { size: 31, family: FONTS.marker, color: '#1d2a6b', maxWidth: 180 });
+      text(k, '☐ ship it!!', -84, 60, { size: 31, family: FONTS.marker, color: '#e8213a', maxWidth: 180 });
+    });
+  });
   const sheetTex = sheet.surf.colorTexture();
   const right = numSurface(sidePoint(1), 0.05);
   const left = numSurface(sidePoint(-1), 0.05);
@@ -647,6 +664,17 @@ function build(bctx: ObjectBuildContext) {
       lift: (u, v) => 0.9 * Math.pow(THREE.MathUtils.smoothstep(u + (1 - v) * 0.6, 1.05, 1.6), 2),
     }),
     stickerPatch(left, -27, LIFT + 12, 6.6, 2.9, 4 * DEG, cBar.uv, { nx: 8, ny: 4, offset: 0.08 }),
+    // a sticky note on the corner of the screen, its bottom corner curling off the glass
+    stickerPatch(
+      numSurface((a, b, out) => out.set(a, b, screenZ(a, b)), 0.05),
+      9.9,
+      SCR.cy - 6.6,
+      6.2,
+      6.2,
+      -7 * DEG,
+      cNote.uv,
+      { nx: 10, ny: 10, offset: 0.2, lift: (u, v) => 1.6 * Math.pow(THREE.MathUtils.smoothstep(u * 0.8 + (1 - v) * 0.9, 0.9, 1.7), 2) },
+    ),
   ];
   const stickersGeo = merge(stickerGeos);
   stickerGeos.forEach((g) => g.dispose());
@@ -661,7 +689,7 @@ export const imac: LibraryDef = {
   name: 'iMac G3',
   tagline: 'hello (again)',
   category: 'tech',
-  defaultRotation: [0.2, -0.62, 0],
+  defaultRotation: [0.24, -0.66, 0.05],
   build,
 };
 export default imac;

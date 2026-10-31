@@ -6,7 +6,7 @@ import { Trash, finish } from '../build';
 import { lathe, merge, parametric, place, ribbon, stickerPatch, surfaces, tint } from '../geometry';
 import { chrome, glossyPlastic, holoFoil, paperBackfaces, stickerSheet } from '../materials';
 import { FONTS, DEG, rng, text, font, sticker, rrPath, rrect, starPath, holoFill, fillPath, smallPrint, grain, hexA, type C2D } from '../paint';
-import { circlePathShape, decalPlane, inCell, peelLift, roundRectPath, roundRectShape, screwHead, smoothSlab } from './_translucent';
+import { circlePathShape, decalPlane, inCell, peelLift, roundRect, roundRectPath, roundRectShape, screwHead, smoothSlab } from './_translucent';
 
 /*
  * MIXTAPE VOL. 0: a chunky compact cassette in candy-pink translucent plastic. White hub
@@ -22,7 +22,6 @@ const D = 1.56;
 const R = 0.52; // plan corner radius
 const BEV = 0.15;
 const HALF = D / 2; // front cap at z = +HALF
-const SEAM = 0.025;
 
 const HUB_X = 2.1;
 const HUB_Y = 0.6;
@@ -64,14 +63,21 @@ function holes(): THREE.Path[] {
   return list;
 }
 
-/** One shell half (front when sign = 1), with the seam groove where the halves meet. */
-function shellHalf(sign: number): THREE.BufferGeometry {
+/** The shell: one soft-edged slab with the hub and head-area holes. */
+function shellBody(): THREE.BufferGeometry {
   const shape = roundRectShape(0, 0, W - 2 * BEV, H - 2 * BEV, R);
   shape.holes.push(...holes());
-  const depth = HALF - SEAM;
-  const g = smoothSlab(shape, depth, BEV, { bevelSegments: 4, curveSegments: 12 });
-  g.translate(0, 0, sign * (SEAM + depth / 2));
-  return g;
+  return smoothSlab(shape, D, BEV, { bevelSegments: 5, curveSegments: 12 });
+}
+
+/** Thin parting line where the two moulded halves meet. */
+function seamGeometry(): THREE.BufferGeometry {
+  const path = new THREE.Path();
+  roundRect(path, 0, 0, W + 0.01, H + 0.01, R + BEV + 0.005);
+  const pts = path.getSpacedPoints(220).map((p) => new THREE.Vector3(p.x, p.y, 0));
+  pts.push(pts[0].clone());
+  const half = new THREE.Vector3(0, 0, 0.022);
+  return ribbon(pts, () => half);
 }
 
 /** Raised trapezoid plate at the bottom of a face (the head area), with the same holes. */
@@ -441,7 +447,7 @@ function build(bctx: ObjectBuildContext) {
   const inner = new THREE.Group();
 
   // ---------- shell: two halves (seam groove between them) + raised head-area plates
-  const shellParts = [shellHalf(1), shellHalf(-1), trapezoid(1), trapezoid(-1)];
+  const shellParts = [shellBody(), trapezoid(1), trapezoid(-1)];
   const shellGeo = merge(shellParts);
   shellParts.forEach((g) => g.dispose());
   const shellMat = new THREE.MeshPhysicalMaterial({
@@ -489,6 +495,7 @@ function build(bctx: ObjectBuildContext) {
   // ---------- tape path, guide rollers, pressure pad + spring, inner pins (vertex coloured)
   const bits: THREE.BufferGeometry[] = [];
   bits.push(tint(tapeGeometry(), '#4a2a1a'));
+  bits.push(tint(seamGeometry(), '#b8337f'));
   for (const sx of [-1, 1]) {
     const roller = new THREE.CylinderGeometry(ROLLER_R, ROLLER_R, PACK_H + 0.12, 24).rotateX(Math.PI / 2);
     bits.push(tint(place(roller, [sx * ROLLER_X, ROLLER_Y, 0]), '#f4f2ec'));
@@ -557,7 +564,7 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(starGeo, holoFoil(sheetTex, { side: THREE.DoubleSide, forceSinglePass: true, metalness: 0.3, roughness: 0.25 })));
   const paper: THREE.BufferGeometry[] = [];
   paper.push(stickerPatch(frontFace, 3.82, -1.1, 1.95, 1.18, -9 * DEG, cells.adv.uv, { nx: 4, ny: 4, offset: 0.012 }));
-  paper.push(stickerPatch(backFace, -3.2, 1.75, 1.25, 1.25, 14 * DEG, cells.dot.uv, { nx: 4, ny: 4, offset: 0.004 }));
+  paper.push(stickerPatch(backFace, 3.75, -2.2, 1.3, 1.3, 14 * DEG, cells.dot.uv, { nx: 4, ny: 4, offset: 0.004 }));
   // lime SHIP IT tape wrapped over the top edge (front face -> bevel -> top -> bevel -> back face)
   {
     const yTop = H / 2;

@@ -392,6 +392,23 @@ function paintPot(s: Surface, prof: P2[]): void {
   };
   engrave(c, 'rgba(90,35,15,0.55)', 3);
 
+  // maker's stamp on the flat base: one text line in the texture wraps into a ring of radius ~1.4
+  const stamp = (k: C2D, col: string) => {
+    const ring = 1.4;
+    const yy = row(ring);
+    const stretch = BELLY_R / ring;
+    k.save();
+    k.translate(W / 2, yy);
+    k.scale(stretch, 1);
+    k.font = `400 ${Math.round(H * 0.026)}px ${FONTS.archivoBlack}`;
+    k.fillStyle = col;
+    k.textAlign = 'center';
+    k.textBaseline = 'middle';
+    k.fillText('HANDMADE BY ZEROS KITCHEN · PURE COPPER · TINNED WITH LOVE ·', 0, 0, W / stretch - 20);
+    k.restore();
+  };
+  stamp(c, 'rgba(70,30,20,0.6)');
+
   // hammered dimples: a little colour sparkle + depressions in the bump layer
   const yTop = row(sOuter(4.98));
   const yBot = row(sOuter(0.35));
@@ -431,6 +448,7 @@ function paintPot(s: Surface, prof: P2[]): void {
       for (const ox of x < rad ? [0, W] : x > W - rad ? [0, -W] : [0]) b.drawImage(spr, x + ox - rad, y - rad, rad * 2, rad * 2);
     }
     engrave(b, 'rgb(60,60,60)', 4);
+    stamp(b, 'rgb(70,70,70)');
     // spun lines on the brass neck and lip
     b.strokeStyle = 'rgba(150,150,150,0.5)';
     b.lineWidth = 1.5;
@@ -467,11 +485,11 @@ function paintMound(s: Surface): void {
 }
 
 function grainColor(x: number, z: number, r: () => number): string {
-  const f = fbm3(x * 0.42 + 3, 0.5, z * 0.42 - 1, 21);
+  const f = fbm3(x * 0.32 + 3, 0.5, z * 0.32 - 1, 21);
   const pick = (a: string[]) => a[Math.floor(r() * a.length)];
-  if (f > 0.6) return r() < 0.68 ? pick(RICE_ORANGE) : pick(RICE_YELLOW);
-  if (f > 0.5) return r() < 0.62 ? pick(RICE_YELLOW) : pick(RICE_WHITE);
-  return r() < 0.9 ? pick(RICE_WHITE) : pick(RICE_YELLOW);
+  if (f > 0.6) return r() < 0.6 ? pick(RICE_ORANGE) : pick(RICE_YELLOW);
+  if (f > 0.53) return r() < 0.7 ? pick(RICE_YELLOW) : pick(RICE_WHITE);
+  return r() < 0.94 ? pick(RICE_WHITE) : pick(RICE_YELLOW);
 }
 
 function paintStickers(sheet: StickerSheet) {
@@ -895,9 +913,9 @@ function build(bctx: ObjectBuildContext) {
 
   const patches: THREE.BufferGeometry[] = [];
   const cm = (cell: { w: number; h: number }, w: number) => (w * cell.h) / cell.w;
-  patches.push(stickerPatch(wall.at, 1.2, wall.sAtY(2.55), 3.8, 3.8, -4 * DEG, cells.cSeal.uv, { nx: 20, ny: 20, offset: 0.025 }));
+  patches.push(stickerPatch(wall.at, 1.25, wall.sAtY(2.95), 3.55, 3.55, -4 * DEG, cells.cSeal.uv, { nx: 20, ny: 20, offset: 0.025 }));
   patches.push(
-    stickerPatch(wall.at, -3.4, wall.sAtY(1.3), 2.9, cm(cells.cPink, 2.9), 12 * DEG, cells.cPink.uv, {
+    stickerPatch(wall.at, -2.05, wall.sAtY(1.2), 2.9, cm(cells.cPink, 2.9), 12 * DEG, cells.cPink.uv, {
       nx: 16,
       ny: 10,
       offset: 0.02,

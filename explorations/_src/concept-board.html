@@ -1,0 +1,932 @@
+<style>
+/* ==========================================================================
+   01 · The Board (v2)
+   Story mode: scroll flies a camera from the header out over a design board.
+   Explore mode: the board goes full-screen and becomes a playground
+   (pan, zoom, marker, stamps, sticky notes, comments, move + tidy up).
+   ========================================================================== */
+#c-board .bd-track { position: relative; height: 640svh; }
+#c-board .bd-stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(251, 250, 247, 0.16) 1px, transparent 1.6px) 0 0 / var(--dot, 24px) var(--dot, 24px),
+    #111114;
+  touch-action: pan-y;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#c-board.is-explore .bd-stage { position: fixed; inset: 0; height: auto; z-index: 85; touch-action: none; }
+#c-board .bd-stage.is-dragging { cursor: grabbing; }
+#c-board .bd-stage[data-tool='move'] { cursor: default; }
+#c-board .bd-stage[data-tool='marker'] { cursor: crosshair; }
+#c-board .bd-stage[data-tool='stamp'], #c-board .bd-stage[data-tool='note'] { cursor: copy; }
+html.bd-lock, html.bd-lock body { overflow: hidden !important; }
+html.bd-lock .lab-switch { opacity: 0; pointer-events: none; }
+
+#c-board .bd-board { position: absolute; left: 0; top: 0; width: 3800px; height: 2400px; transform-origin: 0 0; --s: 1; }
+
+/* FigJam-style sections, icon tab only (no titles) */
+#c-board .bd-sec { position: absolute; border-radius: 28px; background: var(--sec); box-shadow: inset 0 0 0 calc(2px / var(--s)) rgba(255, 255, 255, 0.08); }
+#c-board .bd-sec__tab {
+  position: absolute; left: 0; top: 0;
+  transform: translateY(-100%) scale(calc(1 / var(--s))); transform-origin: 0 100%;
+  display: inline-grid; place-items: center; min-width: 40px; height: 30px; padding: 0 12px; margin-top: -8px;
+  border-radius: 10px; background: var(--tab); color: #111; font: 600 15px/1 var(--mono);
+  box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.6);
+}
+
+/* frames */
+#c-board .bd-frame {
+  position: absolute;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px -24px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  cursor: zoom-in;
+  transition: left 0.6s var(--spring), top 0.6s var(--spring);
+}
+#c-board .bd-frame.is-dragged { transition: none; z-index: 5; box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.85), 0 0 0 calc(2px / var(--s)) #2d8cff; }
+#c-board .bd-stage[data-tool='move'] .bd-frame:not(.bd-hero) { cursor: move; }
+#c-board .bd-stage[data-tool='marker'] .bd-frame, #c-board .bd-stage[data-tool='stamp'] .bd-frame, #c-board .bd-stage[data-tool='note'] .bd-frame { cursor: inherit; }
+#c-board .bd-frame .bd-media { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; transition: transform 0.25s ease-out; }
+#c-board .bd-frame.is-ux { cursor: pointer; }
+#c-board .bd-frame.is-3d { perspective: 900px; }
+#c-board .bd-frame.is-3d .bd-media { transform: rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg)); }
+/* selection box with a constant on-screen stroke */
+#c-board .bd-sel { position: absolute; inset: calc(-4px / var(--s)); border-radius: 18px; outline: calc(2px / var(--s)) solid #2d8cff; opacity: 0; pointer-events: none; transition: opacity 0.12s ease; }
+#c-board .bd-sel i { position: absolute; width: calc(10px / var(--s)); height: calc(10px / var(--s)); background: #fff; border: calc(2px / var(--s)) solid #2d8cff; border-radius: calc(2px / var(--s)); }
+#c-board .bd-sel i:nth-child(1) { left: calc(-5px / var(--s)); top: calc(-5px / var(--s)); }
+#c-board .bd-sel i:nth-child(2) { right: calc(-5px / var(--s)); top: calc(-5px / var(--s)); }
+#c-board .bd-sel i:nth-child(3) { right: calc(-5px / var(--s)); bottom: calc(-5px / var(--s)); }
+#c-board .bd-sel i:nth-child(4) { left: calc(-5px / var(--s)); bottom: calc(-5px / var(--s)); }
+#c-board .bd-sel b {
+  position: absolute; left: 50%; top: 100%; margin-top: calc(10px / var(--s));
+  transform: translateX(-50%) scale(calc(1 / var(--s))); transform-origin: 50% 0;
+  padding: 4px 7px; border-radius: 6px; background: #2d8cff; color: #fff; font: 500 12px/1 var(--mono); white-space: nowrap;
+}
+#c-board .bd-frame:hover .bd-sel, #c-board .bd-frame:focus-visible .bd-sel, #c-board .bd-frame.is-dragged .bd-sel { opacity: 1; }
+#c-board .bd-frame:focus-visible { outline: none; }
+/* motion frames: a little animation timeline on hover */
+#c-board .bd-timeline {
+  position: absolute; left: 50%; top: 100%; width: calc(260px); margin-top: calc(34px / var(--s));
+  transform: translateX(-50%) scale(calc(1 / var(--s))); transform-origin: 50% 0;
+  height: 26px; border-radius: 9px; padding: 0 10px; display: flex; align-items: center; gap: 8px;
+  background: rgba(20, 20, 24, 0.86); box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.7); opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
+}
+#c-board .bd-timeline em { font: 600 10px/1 var(--mono); color: var(--lime); font-style: normal; }
+#c-board .bd-timeline span { position: relative; flex: 1; height: 2px; background: rgba(255, 255, 255, 0.25); border-radius: 2px; }
+#c-board .bd-timeline span i { position: absolute; top: 50%; width: 7px; height: 7px; translate: -50% -50%; rotate: 45deg; background: #ffd23f; }
+#c-board .bd-timeline span b { position: absolute; top: -6px; bottom: -6px; width: 2px; background: #ff4f64; animation: bd-play 2.4s linear infinite; }
+@keyframes bd-play { from { left: 0; } to { left: 100%; } }
+#c-board .bd-frame.is-motion:hover .bd-timeline { opacity: 1; }
+/* Figma-style prototype play button on product frames */
+#c-board .bd-play {
+  position: absolute; right: 0; top: 0; transform: translate(35%, -35%) scale(calc(1 / var(--s)));
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; border: 0; cursor: pointer;
+  background: var(--lime); color: #111; font-size: 16px;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), 0 8px 18px -6px rgba(178, 225, 0, 0.9);
+  transition: transform 0.35s var(--spring);
+}
+#c-board .bd-frame.is-ux:hover .bd-play { transform: translate(35%, -35%) scale(calc(1.18 / var(--s))); }
+
+/* the header, shrunk into a frame */
+#c-board .bd-hero { overflow: hidden; cursor: default; }
+#c-board .bd-hero__bg {
+  position: absolute; inset: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,0) 0 6px, rgba(255,255,255,.1) 6px 14px, rgba(0,0,0,.22) 30px, rgba(0,0,0,0) 40px),
+    radial-gradient(55% 75% at 14% 30%, #ffa25c, transparent 70%),
+    radial-gradient(50% 70% at 86% 72%, #ff3f7f, transparent 70%),
+    radial-gradient(70% 90% at 58% 8%, #1e1060, transparent 75%),
+    #05040e;
+}
+#c-board .bd-hero__t { position: absolute; left: 50%; top: 50%; translate: -50% -50%; text-align: center; font: italic 400 84px/0.92 var(--serif); letter-spacing: -0.03em; white-space: nowrap; }
+#c-board .bd-hero__t span {
+  display: inline-block; font: 400 54px/1 var(--display); font-style: normal; color: #111; background: var(--lime);
+  padding: 2px 14px 8px; border-radius: 8px 16px 8px 14px; rotate: -2deg; box-shadow: 4px 5px 0 #000;
+}
+#c-board .bd-hero.is-portrait .bd-hero__t { white-space: normal; width: 600px; font-size: 92px; }
+#c-board .bd-hero.is-portrait .bd-hero__t span { font-size: 58px; margin-top: 10px; }
+#c-board .bd-toy { position: absolute; width: 170px; height: 190px; rotate: var(--r); animation: bd-bob 4s ease-in-out infinite; animation-delay: var(--d); }
+#c-board .bd-toy .w { background: transparent !important; }
+@keyframes bd-bob { 50% { translate: 0 -10px; } }
+#c-board .bd-mini-chrome { position: absolute; border-radius: 999px; height: 34px; }
+#c-board .bd-mini-top { left: 20px; top: 18px; padding: 0 14px 0 10px; display: flex; align-items: center; gap: 8px; font: 600 14px/1 var(--ui); color: #fff; }
+#c-board .bd-mini-top u { width: 16px; height: 18px; border: 3.5px solid var(--lime); border-radius: 50%; }
+#c-board .bd-mini-top2 { right: 20px; top: 18px; padding: 0 14px; display: flex; align-items: center; gap: 14px; }
+#c-board .bd-mini-top2 i { width: 54px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.55); }
+
+#c-board .bd-doodle { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+#c-board .bd-doodle path { fill: none; stroke: var(--lime); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* visitor layers: marker ink, stamps, sticky notes */
+#c-board .bd-ink { position: absolute; inset: 0; width: 3800px; height: 2400px; overflow: visible; pointer-events: none; z-index: 6; }
+#c-board .bd-ink path { fill: none; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round; opacity: 0.95; }
+#c-board .bd-stamp { position: absolute; width: 96px; height: 96px; margin: -48px 0 0 -48px; z-index: 7; rotate: var(--r); filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.35)); animation: bd-pop 0.5s var(--spring) both; pointer-events: none; }
+#c-board .bd-stamp svg { width: 100%; height: 100%; display: block; }
+@keyframes bd-pop { from { transform: scale(0.2); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } to { transform: scale(1); } }
+#c-board .bd-sticky {
+  position: absolute; z-index: 8; width: 230px; min-height: 200px; padding: 34px 18px 18px;
+  background: #fff6a8; color: #2a2500; rotate: var(--r); border-radius: 4px 4px 18px 4px;
+  box-shadow: 0 18px 30px -16px rgba(0, 0, 0, 0.65);
+  font: 500 24px/1.25 var(--marker); animation: bd-pop 0.45s var(--spring) both; cursor: default;
+}
+#c-board .bd-sticky::before { content: ''; position: absolute; left: 50%; top: -12px; width: 90px; height: 28px; translate: -50% 0; rotate: -3deg; background: rgba(255, 255, 255, 0.55); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); cursor: grab; }
+#c-board .bd-sticky[data-c='pink'] { background: #ffc6ec; }
+#c-board .bd-sticky[data-c='mint'] { background: #c3f5e2; }
+#c-board .bd-sticky [contenteditable] { outline: none; min-height: 130px; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; -webkit-user-select: text; user-select: text; }
+#c-board .bd-sticky [contenteditable]:empty::before { content: 'Leave a note…'; opacity: 0.45; }
+#c-board .bd-sticky button { position: absolute; right: 8px; top: 6px; width: 24px; height: 24px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, 0.08); cursor: pointer; font-size: 13px; opacity: 0; transition: opacity 0.15s; }
+#c-board .bd-sticky:hover button, #c-board .bd-sticky:focus-within button { opacity: 1; }
+
+/* designer's comments layer (off by default: the canvas stays outputs-only) */
+#c-board .bd-cmt { position: absolute; z-index: 9; transform: scale(calc(1 / var(--s))); transform-origin: 0 100%; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
+#c-board.show-comments .bd-cmt { opacity: 1; pointer-events: auto; }
+#c-board .bd-cmt > button { width: 36px; height: 36px; border-radius: 18px 18px 18px 4px; border: 2px solid #fff; background: #ff4fd8; color: #111; font: 700 13px/1 var(--ui); cursor: pointer; box-shadow: 0 6px 14px -4px rgba(0, 0, 0, 0.6); }
+#c-board .bd-cmt div { position: absolute; left: 44px; bottom: 0; width: 240px; padding: 12px 14px; border-radius: 14px 14px 14px 4px; background: #fff; color: #1a1a1a; font: 500 13px/1.4 var(--ui); box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.6); display: none; }
+#c-board .bd-cmt div b { display: block; font-size: 12px; margin-bottom: 4px; color: #6b6b6b; }
+#c-board .bd-cmt.is-open div { display: block; }
+
+/* multiplayer cursors (constant on-screen size) */
+#c-board .bd-cursor { position: absolute; left: 0; top: 0; z-index: 10; transform-origin: 0 0; pointer-events: none; }
+#c-board .bd-cursor svg { display: block; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4)); }
+#c-board .bd-cursor b { position: absolute; left: 16px; top: 18px; padding: 4px 8px 5px; border-radius: 4px 10px 10px 10px; background: var(--cc); color: #111; font: 600 12px/1 var(--ui); white-space: nowrap; pointer-events: auto; cursor: pointer; }
+#c-board .bd-cursor b:hover { outline: 2px solid #fff; }
+#c-board .bd-cursor q { position: absolute; left: 16px; top: 42px; max-width: 220px; padding: 7px 10px; border-radius: 4px 14px 14px 14px; background: var(--cc); color: #111; font: 500 13px/1.25 var(--ui); white-space: nowrap; quotes: none; opacity: 0; transform: translateY(-4px) scale(0.95); transition: opacity 0.2s ease, transform 0.3s var(--spring); }
+#c-board .bd-cursor q.is-on { opacity: 1; transform: none; }
+#c-board .bd-you { position: absolute; z-index: 30; left: 0; top: 0; pointer-events: none; padding: 4px 8px 5px; border-radius: 4px 10px 10px 10px; background: var(--lime); color: #111; font: 700 12px/1 var(--ui); opacity: 0; transition: opacity 0.15s; }
+#c-board .bd-you.is-on { opacity: 1; }
+#c-board .bd-ghost-stamp { position: absolute; z-index: 30; left: 0; top: 0; width: 64px; height: 64px; margin: -32px 0 0 -32px; pointer-events: none; opacity: 0; }
+#c-board .bd-stage[data-tool='stamp'] .bd-ghost-stamp.is-on { opacity: 0.75; }
+
+/* HUD */
+#c-board .bd-hud { position: absolute; z-index: 20; }
+#c-board .bd-tools {
+  left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); translate: -50% 0;
+  display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 18px; max-width: calc(100vw - 20px);
+}
+#c-board .bd-tool {
+  position: relative; width: 40px; height: 40px; flex: none; border: 0; border-radius: 12px; display: grid; place-items: center;
+  background: transparent; color: #fff; cursor: pointer; transition: background-color 0.15s ease, transform 0.3s var(--spring);
+}
+#c-board .bd-tool svg { width: 20px; height: 20px; }
+#c-board .bd-tool:hover { background: rgba(255, 255, 255, 0.14); }
+#c-board .bd-tool:active { transform: scale(0.92); }
+#c-board .bd-tool[aria-pressed='true'] { background: var(--lime); color: #111; box-shadow: inset 0 1px 1px rgba(255,255,255,.9), 0 6px 16px -6px rgba(178,225,0,.8); }
+#c-board .bd-tool.is-wide { width: auto; padding: 0 12px 0 10px; gap: 6px; display: inline-flex; font: 600 13px/1 var(--ui); }
+#c-board .bd-tool .k { position: absolute; right: 3px; bottom: 2px; font: 600 8px/1 var(--mono); opacity: 0.5; }
+#c-board .bd-tools hr { width: 1px; height: 22px; margin: 0 4px; border: 0; background: rgba(255, 255, 255, 0.2); }
+#c-board .bd-tray { left: 50%; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 62px); translate: -50% 0; display: none; gap: 6px; padding: 6px; border-radius: 16px; }
+#c-board .bd-tray.is-on { display: flex; }
+#c-board .bd-tray button { width: 40px; height: 40px; border: 0; border-radius: 12px; display: grid; place-items: center; background: transparent; cursor: pointer; }
+#c-board .bd-tray button[aria-pressed='true'] { background: rgba(255, 255, 255, 0.22); box-shadow: inset 0 0 0 2px var(--lime); }
+#c-board .bd-tray .sw { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7); }
+#c-board .bd-tray svg { width: 32px; height: 32px; }
+#c-board .bd-zoom { left: max(16px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; font: 600 12px/1 var(--mono); }
+#c-board .bd-zoom button { width: 28px; height: 28px; border: 0; border-radius: 50%; background: transparent; color: #fff; font: 600 16px/1 var(--ui); cursor: pointer; }
+#c-board .bd-zoom button:hover { background: rgba(255, 255, 255, 0.14); }
+#c-board .bd-zoom span { min-width: 44px; text-align: center; }
+#c-board .bd-mini { right: max(16px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); width: 190px; height: 120px; border-radius: 16px; padding: 8px; cursor: pointer; }
+#c-board .bd-mini svg { width: 100%; height: 100%; display: block; pointer-events: none; }
+#c-board .bd-mini .vp { fill: rgba(215, 255, 58, 0.12); stroke: var(--lime); stroke-width: 18; }
+#c-board .bd-tip { left: max(16px, env(safe-area-inset-left)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 48px); pointer-events: none; transition: opacity 0.3s ease; }
+#c-board .bd-done { right: max(16px, env(safe-area-inset-right)); top: max(14px, env(safe-area-inset-top)); display: none; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border: 0; border-radius: 999px; color: #fff; font: 600 13px/1 var(--ui); cursor: pointer; }
+#c-board.is-explore .bd-done { display: inline-flex; }
+#c-board .bd-done kbd { font: 600 10px/1 var(--mono); padding: 3px 5px; border-radius: 5px; background: rgba(255, 255, 255, 0.16); }
+#c-board .bd-toast { left: 50%; top: max(14px, env(safe-area-inset-top)); translate: -50% -140%; padding: 10px 14px; border-radius: 999px; font: 600 13px/1 var(--ui); white-space: nowrap; transition: translate 0.45s var(--spring); pointer-events: none; max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis; }
+#c-board .bd-toast.is-on { translate: -50% 0; }
+#c-board:not(.is-explore) .bd-toast { top: 64px; }
+#c-board .bd-confetti { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 40; pointer-events: none; }
+@media (max-width: 640px) {
+  #c-board .bd-mini { width: 112px; height: 72px; padding: 6px; border-radius: 12px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 64px); }
+  #c-board .bd-zoom { display: none; }
+  #c-board .bd-tip { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 64px); max-width: 200px; }
+  #c-board .bd-tool { width: 36px; height: 36px; }
+  #c-board .bd-tool .k, #c-board .bd-tool.is-wide span { display: none; }
+  #c-board .bd-tool.is-wide { width: 36px; padding: 0; justify-content: center; }
+  #c-board .bd-tools hr { margin: 0 1px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #c-board .bd-toy, #c-board .bd-timeline span b { animation: none; }
+}
+</style>
+
+<section class="concept" id="c-board" data-concept="board" data-num="01" data-name="The Board"
+  data-pitch="The header zooms out and turns out to be one frame on a giant design board. Scroll for the story, or step in and play with it like a real design file."
+  data-how="Scroll to fly the camera · Explore (E) to pan, zoom &amp; doodle · Stamp the work you love · ▶ opens a case study">
+  <div class="bd-track">
+    <div class="bd-stage" aria-label="Work board" data-tool="hand">
+      <div class="bd-board"></div>
+      <div class="bd-hud bd-tray glass" data-for="marker" role="group" aria-label="Marker colour"></div>
+      <div class="bd-hud bd-tray glass" data-for="stamp" role="group" aria-label="Stamps"></div>
+      <div class="bd-hud bd-tools glass" role="toolbar" aria-label="Board tools"></div>
+      <div class="bd-hud bd-zoom glass"><button data-z="-1" aria-label="Zoom out">−</button><span>100%</span><button data-z="1" aria-label="Zoom in">+</button></div>
+      <div class="bd-hud bd-mini glass" role="button" tabindex="0" aria-label="Minimap: jump there"><svg viewBox="0 0 3800 2400" preserveAspectRatio="xMidYMid meet"></svg></div>
+      <div class="bd-hud bd-tip lab-note"></div>
+      <button class="bd-hud bd-done glass" type="button">Done <kbd>Esc</kbd></button>
+      <div class="bd-hud bd-toast glass" role="status" aria-live="polite"></div>
+      <div class="bd-you">you</div>
+      <div class="bd-ghost-stamp"></div>
+      <canvas class="bd-confetti"></canvas>
+    </div>
+  </div>
+</section>
+
+<script>
+(() => {
+  const root = document.getElementById('c-board');
+  const track = root.querySelector('.bd-track');
+  const stage = root.querySelector('.bd-stage');
+  const board = root.querySelector('.bd-board');
+  const toolsEl = root.querySelector('.bd-tools');
+  const trays = { marker: root.querySelector('.bd-tray[data-for="marker"]'), stamp: root.querySelector('.bd-tray[data-for="stamp"]') };
+  const zoomTxt = root.querySelector('.bd-zoom span');
+  const mini = root.querySelector('.bd-mini');
+  const miniSvg = mini.querySelector('svg');
+  const tip = root.querySelector('.bd-tip');
+  const doneBtn = root.querySelector('.bd-done');
+  const toastEl = root.querySelector('.bd-toast');
+  const youTag = root.querySelector('.bd-you');
+  const ghost = root.querySelector('.bd-ghost-stamp');
+  const confettiCv = root.querySelector('.bd-confetti');
+  const { h, mount, works, openCase } = Lab;
+  const NS = 'http://www.w3.org/2000/svg';
+  const byId = (id) => works.find((w) => w.id === id);
+  const dims = { '4/5': '1080 × 1350', '1/1': '1080 × 1080', '16/10': '1920 × 1200', '4/3': '1600 × 1200' };
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = (t) => t * t * (3 - 2 * t);
+  const svgEl = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  const isTyping = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+
+  // ── layout in board units ──────────────────────────────────────────────
+  const BW = 3800, BH = 2400;
+  const HERO_L = { x: 1400, y: 900, w: 1000, h: 625 };
+  const HERO_P = { x: 1580, y: 700, w: 640, h: 1000 };
+  let portrait = innerHeight > innerWidth * 1.05;
+  let HERO = portrait ? HERO_P : HERO_L;
+  const SECTIONS = [
+    { x: 120, y: 130, w: 1120, h: 1460, sec: 'rgba(255,79,216,.14)', tab: '#ff4fd8', icon: '▶' },
+    { x: 2560, y: 130, w: 1120, h: 1460, sec: 'rgba(43,89,255,.16)', tab: '#7fa0ff', icon: '◆' },
+    { x: 500, y: 1720, w: 2800, h: 560, sec: 'rgba(215,255,58,.12)', tab: '#d7ff3a', icon: '↗' },
+  ];
+  const F = (id, x, y, w) => { const work = byId(id); const [a, b] = work.aspect.split('/').map(Number); return { work, x, y, w, h: Math.round((w * b) / a) }; };
+  const FRAMES = [
+    F('m1', 190, 210, 320), F('m2', 560, 210, 300), F('m3', 900, 210, 300),
+    F('m5', 190, 650, 320), F('m8', 560, 560, 640), F('m7', 900, 990, 300),
+    F('m4', 190, 1020, 320), F('m6', 560, 1000, 300),
+    F('d1', 2630, 210, 320), F('d2', 2990, 210, 300), F('d6', 3330, 210, 290),
+    F('d3', 2630, 650, 320), F('d4', 2990, 560, 300), F('d5', 3330, 620, 290),
+    F('m9', 2630, 1040, 640),
+    F('u1', 580, 1800, 720), F('u2', 1360, 1790, 330), F('u3', 1740, 1790, 330), F('u4', 2130, 1800, 600),
+  ];
+  FRAMES.forEach((f) => { if (f.work.type === 'ux') f.y = 1790 + Math.round((470 - f.h) / 2); f.dx = 0; f.dy = 0; });
+
+  // ── build the board ─────────────────────────────────────────────────────
+  SECTIONS.forEach((s) => board.append(h('div', { class: 'bd-sec', style: `left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;--sec:${s.sec};--tab:${s.tab}` }, h('span', { class: 'bd-sec__tab' }, s.icon))));
+  const doodle = svgEl('svg', { class: 'bd-doodle', viewBox: `0 0 ${BW} ${BH}` });
+  const doodlePaths = ['M1400,1020 C1300,960 1300,860 1240,800', 'M2400,1020 C2500,950 2500,860 2560,800', 'M1900,1525 C1880,1600 1930,1650 1900,1712']
+    .map((d) => doodle.appendChild(svgEl('path', { d })));
+  board.append(doodle);
+
+  const hero = h('div', { class: 'bd-frame bd-hero' }, h('div', { class: 'bd-hero__bg' }),
+    h('div', { class: 'bd-mini-chrome bd-mini-top glass' }, h('u'), 'once-upon-a-time'), h('div', { class: 'bd-mini-chrome bd-mini-top2 glass' }, h('i'), h('i'), h('i')),
+    h('div', { class: 'bd-hero__t' }, 'Once upon a time', h('br'), 'i was a ', h('span', {}, 'product designer')));
+  // (the header's island isn't drawn here: on the board it becomes the toolbar)
+  const toys = [['d6', '-8deg', '0s'], ['d2', '7deg', '-1s'], ['d1', '6deg', '-2s'], ['d3', '-6deg', '-3s']].map(([id, r, d]) => {
+    const t = h('div', { class: 'bd-toy', style: `--r:${r};--d:${d}` });
+    hero.append(t);
+    mount(byId(id), t);
+    return t;
+  });
+  board.append(hero);
+  const TOY_POS = { l: [[40, 70], [790, 60], [60, 390], [780, 380]], p: [[20, 90], [450, 80], [30, 720], [440, 700]] };
+  function placeHero() {
+    hero.style.cssText = `left:${HERO.x}px;top:${HERO.y}px;width:${HERO.w}px;height:${HERO.h}px`;
+    hero.classList.toggle('is-portrait', portrait);
+    toys.forEach((t, i) => { const [x, y] = TOY_POS[portrait ? 'p' : 'l'][i]; t.style.left = x + 'px'; t.style.top = y + 'px'; });
+  }
+  placeHero();
+
+  const frameEls = FRAMES.map((f, i) => {
+    const t = f.work.type;
+    const el = h('div', { class: `bd-frame is-${t === '3d' ? '3d' : t}`, tabindex: '0', role: 'button', 'data-i': i, 'aria-label': t === 'ux' ? 'Open case study' : 'Zoom to this piece' });
+    const media = h('div', { class: 'bd-media' });
+    el.append(media);
+    mount(f.work, media);
+    el.append(h('div', { class: 'bd-sel' }, h('i'), h('i'), h('i'), h('i'), h('b', {}, dims[f.work.aspect] || '')));
+    if (t === 'motion') el.append(h('div', { class: 'bd-timeline' }, h('em', {}, '0:0' + (3 + (i % 6))), h('span', {}, h('i', { style: 'left:18%' }), h('i', { style: 'left:55%' }), h('i', { style: 'left:82%' }), h('b'))));
+    if (t === 'ux') el.append(h('button', { class: 'bd-play', type: 'button', 'aria-label': 'Open case study', tabindex: '-1' }, '▶'));
+    board.append(el);
+    return el;
+  });
+  const placeFrame = (i) => { const f = FRAMES[i]; const el = frameEls[i]; el.style.left = f.x + f.dx + 'px'; el.style.top = f.y + f.dy + 'px'; el.style.width = f.w + 'px'; el.style.height = f.h + 'px'; };
+  FRAMES.forEach((_, i) => placeFrame(i));
+
+  // visitor layers
+  const ink = svgEl('svg', { class: 'bd-ink', viewBox: `0 0 ${BW} ${BH}` });
+  board.append(ink);
+  const stampLayer = h('div', { class: 'bd-layer' });
+  const noteLayer = h('div', { class: 'bd-layer' });
+  const cmtLayer = h('div', { class: 'bd-layer' });
+  board.append(stampLayer, noteLayer, cmtLayer);
+
+  // designer's comments (placeholders the owner rewrites; hidden until the comments layer is on)
+  const COMMENTS = [
+    [0, 'Launch loop. The brief, the tools and how long it took, in one line.'],
+    [4, 'Kinetic type study. Swap in the real story behind it.'],
+    [8, '3D render. Software, render time, what was hard.'],
+    [14, 'A note like this only shows when visitors turn comments on.'],
+    [15, 'Case study teaser: the problem in one sentence. ▶ opens the full story.'],
+  ];
+  const cmtEls = COMMENTS.map(([fi, text]) => {
+    const el = h('div', { class: 'bd-cmt' }, h('button', { type: 'button', 'aria-label': 'Designer note' }, 'Z'), h('div', {}, h('b', {}, 'Designer’s note'), text));
+    el.querySelector('button').addEventListener('click', (e) => { e.stopPropagation(); el.classList.toggle('is-open'); });
+    cmtLayer.append(el);
+    return [fi, el];
+  });
+  const placeComments = () => cmtEls.forEach(([fi, el]) => { const f = FRAMES[fi]; el.style.left = f.x + f.dx + f.w - 10 + 'px'; el.style.top = f.y + f.dy - 16 + 'px'; });
+  placeComments();
+
+  // multiplayer cursors with cursor chat
+  const CURSORS = [
+    { name: 'recruiter', c: '#ff4fd8', cx: 700, cy: 720, rx: 360, ry: 420, sp: 0.21, ph: 0, says: ['this loop 🔥', 'is the CRM one public?', 'ok booking a call'] },
+    { name: 'new client', c: '#7fa0ff', cx: 3100, cy: 700, rx: 340, ry: 380, sp: 0.17, ph: 2, says: ['that donut though', 'can we get one of these?', 'love the chrome'] },
+    { name: 'a friend', c: '#d7ff3a', cx: 1900, cy: 1950, rx: 900, ry: 150, sp: 0.13, ph: 4, says: ['psst: press E and grab the marker', 'stamp the ones you like ✦', 'you can drag me… kidding'] },
+  ];
+  const cursorEls = CURSORS.map((c, i) => {
+    const el = h('div', { class: 'bd-cursor', style: `--cc:${c.c}` });
+    el.innerHTML = `<svg width="22" height="24" viewBox="0 0 22 24"><path d="M2 2 L2 20 L7 15.5 L10.5 22.5 L14 21 L10.6 14 L17.5 14 Z" fill="${c.c}" stroke="#111" stroke-width="1.6" stroke-linejoin="round"/></svg><b title="Follow">${c.name}</b><q></q>`;
+    el.querySelector('b').addEventListener('click', (e) => { e.stopPropagation(); startFollow(i); });
+    board.append(el);
+    return el;
+  });
+
+  // minimap
+  SECTIONS.forEach((s) => miniSvg.append(svgEl('rect', { x: s.x, y: s.y, width: s.w, height: s.h, rx: 40, fill: s.tab, opacity: 0.18 })));
+  const miniFrames = FRAMES.map((f) => miniSvg.appendChild(svgEl('rect', { x: f.x, y: f.y, width: f.w, height: f.h, rx: 24, fill: f.work.tone })));
+  const miniHero = miniSvg.appendChild(svgEl('rect', { rx: 24, fill: '#ff3f7f' }));
+  const syncMini = () => {
+    Object.entries({ x: HERO.x, y: HERO.y, width: HERO.w, height: HERO.h }).forEach(([k, v]) => miniHero.setAttribute(k, v));
+    miniFrames.forEach((r, i) => { r.setAttribute('x', FRAMES[i].x + FRAMES[i].dx); r.setAttribute('y', FRAMES[i].y + FRAMES[i].dy); });
+  };
+  syncMini();
+  const vp = miniSvg.appendChild(svgEl('rect', { class: 'vp', rx: 30 }));
+
+  // ── camera ──────────────────────────────────────────────────────────────
+  // Story keys frame a board-space box {cx, cy, w, h}; the stage fits it ("contain").
+  const OVER = { cx: 1900, cy: 1210, w: 3900, h: 2420 };
+  const MOTION = { cx: 680, cy: 860, w: 1220, h: 1520 };
+  const THREED = { cx: 3120, cy: 860, w: 1220, h: 1520 };
+  function buildKeys() {
+    const H0 = { cx: HERO.x + HERO.w / 2, cy: HERO.y + HERO.h / 2, w: HERO.w, h: HERO.h };
+    const head = [[0.0, H0], [0.06, H0], [0.2, OVER], [0.25, OVER], [0.36, MOTION], [0.45, MOTION], [0.56, THREED], [0.65, THREED]];
+    if (!portrait) { const P = { cx: 1900, cy: 2000, w: 2900, h: 640 }; return [...head, [0.76, P], [0.86, P], [1.0, OVER]]; }
+    const a = { cx: 940, cy: 2025, w: 820, h: 600 }, b = { cx: 1700, cy: 2025, w: 820, h: 600 }, c = { cx: 2430, cy: 2025, w: 700, h: 600 };
+    return [...head, [0.72, a], [0.76, a], [0.8, b], [0.84, b], [0.88, c], [0.92, c], [1.0, OVER]];
+  }
+  let KEYS = buildKeys();
+  function boxAt(p) {
+    let i = 0;
+    while (i < KEYS.length - 2 && p > KEYS[i + 1][0]) i++;
+    const [p0, a] = KEYS[i], [p1, b] = KEYS[i + 1];
+    const t = ease(clamp((p - p0) / Math.max(1e-6, p1 - p0), 0, 1));
+    return { cx: lerp(a.cx, b.cx, t), cy: lerp(a.cy, b.cy, t), w: Math.exp(lerp(Math.log(a.w), Math.log(b.w), t)), h: Math.exp(lerp(Math.log(a.h), Math.log(b.h), t)) };
+  }
+  const W = () => stage.clientWidth, H = () => stage.clientHeight;
+  const fitZ = (b) => Math.min(W() / b.w, H() / b.h);
+  const ZMIN = 0.05, ZMAX = 3;
+  const cam = { cx: OVER.cx, cy: OVER.cy, z: 0.3 };        // what's on screen
+  let free = null;                                          // explore-mode camera
+  const story = { px: 0, py: 0 };                           // temporary story-mode pan (px), decays on scroll
+  let focus = null;                                         // story-mode "zoom to frame"
+  let tween = null;                                         // explore-mode camera flight
+  let follow = -1;
+  let mode = 'story';
+  const toBoard = (sx, sy) => ({ x: (sx - W() / 2) / cam.z + cam.cx, y: (sy - H() / 2) / cam.z + cam.cy });
+  const stageXY = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  function zoomAt(sx, sy, f) {
+    if (!free) return;
+    const b = { x: (sx - W() / 2) / free.z + free.cx, y: (sy - H() / 2) / free.z + free.cy };
+    free.z = clamp(free.z * f, ZMIN, ZMAX);
+    free.cx = b.x - (sx - W() / 2) / free.z;
+    free.cy = b.y - (sy - H() / 2) / free.z;
+    tween = null; stopFollow();
+  }
+  function flyTo(box, ms = 700) {
+    if (!free) return;
+    tween = { from: { ...free }, to: { cx: box.cx, cy: box.cy, z: clamp(fitZ(box), ZMIN, ZMAX) }, t0: performance.now(), ms };
+  }
+  const frameBox = (i, pad = 1.25) => { const f = FRAMES[i]; return { cx: f.x + f.dx + f.w / 2, cy: f.y + f.dy + f.h / 2, w: f.w * pad, h: f.h * pad }; };
+
+  // ── modes ───────────────────────────────────────────────────────────────
+  function enterExplore(reason) {
+    if (mode === 'explore') return;
+    mode = 'explore';
+    free = { ...cam };
+    focus = null;
+    root.classList.add('is-explore');
+    start();
+    document.documentElement.classList.add('bd-lock');
+    toast(reason || 'Exploring the board · scroll pans · ⌘/Ctrl+scroll or pinch zooms');
+    renderTools();
+  }
+  function exitExplore() {
+    if (mode !== 'explore') return;
+    mode = 'story';
+    stopFollow();
+    free = null; tween = null;
+    story.px = story.py = 0;
+    root.classList.remove('is-explore');
+    document.documentElement.classList.remove('bd-lock');
+    if (['marker', 'stamp', 'note', 'move'].includes(tool)) setTool('hand');
+    toast('Back to the story');
+    renderTools();
+  }
+  doneBtn.addEventListener('click', exitExplore);
+
+  // ── tools ───────────────────────────────────────────────────────────────
+  const ICON = {
+    hand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1V4.5a1.5 1.5 0 0 1 3 0V11m0-1V6.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.5a6 6 0 0 1-5-2.7L3.3 15a1.6 1.6 0 0 1 2.5-2L8 15V11"/></svg>',
+    move: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 3l14 8.5-6.2 1.3L10 19z"/></svg>',
+    marker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4.5l5 5L9 20H4v-5z"/><path d="M12.5 6.5l5 5"/></svg>',
+    stamp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a3.5 3.5 0 0 0-2 6.4V12H6a2 2 0 0 0-2 2v2h16v-2a2 2 0 0 0-2-2h-4V9.4A3.5 3.5 0 0 0 12 3zM5 20h14"/></svg>',
+    note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 4h14v10l-6 6H5z"/><path d="M13 20v-6h6"/></svg>',
+    comments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+    undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 0 12h-2" transform="translate(0 -6)"/></svg>',
+    tidy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>',
+    clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+    explore: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+    tour: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
+  };
+  const STAMPS = {
+    heart: '<svg viewBox="0 0 100 100"><path d="M50 88 C20 66 6 50 6 32 A20 20 0 0 1 50 22 A20 20 0 0 1 94 32 C94 50 80 66 50 88Z" fill="#ff3f7f" stroke="#fff" stroke-width="7" stroke-linejoin="round"/><ellipse cx="32" cy="34" rx="8" ry="5" fill="#fff" opacity=".55" transform="rotate(-30 32 34)"/></svg>',
+    fire: '<svg viewBox="0 0 100 100"><path d="M50 94c-20 0-34-14-34-32 0-16 10-24 16-36 2 10 8 14 12 14 0-14 8-28 22-34-4 14 4 22 10 32 6 9 8 16 8 24 0 18-14 32-34 32z" fill="#ff6b1a" stroke="#fff" stroke-width="7" stroke-linejoin="round"/><path d="M50 88c-9 0-15-6-15-15 0-8 6-12 9-18 1 6 4 8 7 8 1-6 4-10 8-12-1 6 6 12 6 22 0 9-6 15-15 15z" fill="#ffd23f"/></svg>',
+    star: '<svg viewBox="0 0 100 100"><path d="M50 6l12.6 27.4 30 3.4-22.4 20.3 6.2 29.5L50 71.5 23.6 86.6l6.2-29.5L7.4 36.8l30-3.4z" fill="#d7ff3a" stroke="#fff" stroke-width="7" stroke-linejoin="round"/></svg>',
+    plus: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="#2b59ff" stroke="#fff" stroke-width="7"/><text x="50" y="62" text-anchor="middle" font-family="Bagel Fat One, Arial Black, sans-serif" font-size="36" fill="#fff">+1</text></svg>',
+    eyes: '<svg viewBox="0 0 100 100"><ellipse cx="32" cy="50" rx="22" ry="30" fill="#fff" stroke="#111" stroke-width="5"/><ellipse cx="68" cy="50" rx="22" ry="30" fill="#fff" stroke="#111" stroke-width="5"/><circle cx="38" cy="58" r="10" fill="#111"/><circle cx="74" cy="58" r="10" fill="#111"/></svg>',
+    wow: '<svg viewBox="0 0 100 100"><path d="M50 4l9 14 16-6-1 17 17 4-11 13 11 13-17 4 1 17-16-6-9 14-9-14-16 6 1-17-17-4 11-13L9 36l17-4-1-17 16 6z" fill="#ffd23f" stroke="#fff" stroke-width="6" stroke-linejoin="round"/><text x="50" y="58" text-anchor="middle" font-family="Bagel Fat One, Arial Black, sans-serif" font-size="22" fill="#111">WOW</text></svg>',
+  };
+  const COLORS = ['#d7ff3a', '#ff4fd8', '#46c8ff', '#ffffff'];
+  let tool = 'hand', color = COLORS[0], stampKind = 'heart', comments = false;
+
+  function setTool(t) {
+    tool = t;
+    stage.dataset.tool = t;
+    if (['marker', 'stamp', 'note', 'move'].includes(t)) enterExplore(
+      t === 'marker' ? 'Marker: draw anywhere. It stays in your browser.'
+      : t === 'stamp' ? 'Stamps: click the work you love'
+      : t === 'note' ? 'Sticky notes: click to leave one'
+      : 'Move: drag frames around. Tidy up puts them back.');
+    ghost.innerHTML = STAMPS[stampKind];
+    renderTools();
+  }
+  function renderTools() {
+    const moved = FRAMES.some((f) => f.dx || f.dy);
+    const btn = (id, label, key, extra = '') =>
+      `<button class="bd-tool ${extra}" data-act="${id}" aria-label="${label}${key ? ` (${key})` : ''}" title="${label}${key ? ` · ${key}` : ''}" aria-pressed="${['hand', 'move', 'marker', 'stamp', 'note'].includes(id) ? tool === id : id === 'comments' ? comments : false}">${ICON[id]}${key ? `<span class="k">${key}</span>` : ''}</button>`;
+    toolsEl.innerHTML =
+      btn('hand', 'Hand: pan', 'H') + btn('move', 'Move frames', 'V') + '<hr>' +
+      btn('marker', 'Marker', 'P') + btn('stamp', 'Stamps', 'S') + btn('note', 'Sticky note', 'N') + btn('comments', 'Designer’s notes', 'C') + '<hr>' +
+      btn('undo', 'Undo', '⌘Z') + (moved ? btn('tidy', 'Tidy up', '') : '') + (history.length ? btn('clear', 'Clear my marks', '') : '') +
+      (mode === 'story'
+        ? `<hr><button class="bd-tool is-wide" data-act="explore" title="Explore the board · E">${ICON.explore}<span>Explore</span></button><button class="bd-tool is-wide" data-act="tour" title="Play the tour">${ICON.tour}<span>Tour</span></button>`
+        : '');
+    trays.marker.classList.toggle('is-on', tool === 'marker');
+    trays.stamp.classList.toggle('is-on', tool === 'stamp');
+  }
+  trays.marker.innerHTML = COLORS.map((c) => `<button data-c="${c}" aria-label="Colour ${c}"><span class="sw" style="background:${c}"></span></button>`).join('');
+  trays.stamp.innerHTML = Object.keys(STAMPS).map((k) => `<button data-s="${k}" aria-label="${k} stamp">${STAMPS[k]}</button>`).join('');
+  const syncTrays = () => {
+    trays.marker.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.c === color)));
+    trays.stamp.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.s === stampKind)));
+  };
+  trays.marker.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { color = b.dataset.c; syncTrays(); } });
+  trays.stamp.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { stampKind = b.dataset.s; ghost.innerHTML = STAMPS[stampKind]; syncTrays(); } });
+  syncTrays();
+  toolsEl.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const a = b.dataset.act;
+    if (['hand', 'move', 'marker', 'stamp', 'note'].includes(a)) setTool(a);
+    else if (a === 'comments') { comments = !comments; root.classList.toggle('show-comments', comments); renderTools(); if (comments) toast('Designer’s notes on. Click a pink pin.'); }
+    else if (a === 'undo') undo();
+    else if (a === 'tidy') tidyUp();
+    else if (a === 'clear') clearMarks();
+    else if (a === 'explore') enterExplore();
+    else if (a === 'tour') playTour();
+  });
+
+  // ── visitor marks: strokes, stamps, notes, frame moves (persisted, undoable) ──
+  const KEY = 'once-upon-board:v2';
+  const marks = { strokes: [], stamps: [], notes: [] };
+  const history = [];
+  const stampedFrames = new Set();
+  let confettiDone = false;
+  const smooth = (pts) => {
+    if (pts.length < 2) return `M${pts[0][0]},${pts[0][1]} l0.1,0`;
+    let d = `M${pts[0][0]},${pts[0][1]}`;
+    for (let i = 1; i < pts.length - 1; i++) { const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2; d += ` Q${pts[i][0]},${pts[i][1]} ${mx.toFixed(1)},${my.toFixed(1)}`; }
+    const l = pts[pts.length - 1];
+    return d + ` L${l[0]},${l[1]}`;
+  };
+  function drawStroke(s) { s.el = ink.appendChild(svgEl('path', { d: smooth(s.pts), stroke: s.c })); }
+  function drawStamp(s) {
+    s.el = h('div', { class: 'bd-stamp', style: `left:${s.x}px;top:${s.y}px;--r:${s.r}deg` });
+    s.el.innerHTML = STAMPS[s.k] || STAMPS.heart;
+    stampLayer.append(s.el);
+  }
+  function drawNote(n) {
+    const text = h('div', { contenteditable: 'true', spellcheck: 'false' });
+    text.textContent = n.text || '';
+    const del = h('button', { type: 'button', 'aria-label': 'Delete note' }, '✕');
+    n.el = h('div', { class: 'bd-sticky', style: `left:${n.x}px;top:${n.y}px;--r:${n.r}deg`, 'data-c': n.c }, text, del);
+    text.addEventListener('input', () => { n.text = text.textContent.slice(0, 160); save(); });
+    text.addEventListener('pointerdown', (e) => e.stopPropagation());
+    del.addEventListener('pointerdown', (e) => e.stopPropagation());
+    del.addEventListener('click', () => { n.el.remove(); marks.notes = marks.notes.filter((x) => x !== n); save(); renderTools(); });
+    // drag a note by its tape (or anywhere but the text)
+    n.el.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      const start = toBoard(...stageXY(e)), ox = n.x, oy = n.y;
+      const mv = (ev) => { const p = toBoard(...stageXY(ev)); n.x = ox + p.x - start.x; n.y = oy + p.y - start.y; n.el.style.left = n.x + 'px'; n.el.style.top = n.y + 'px'; };
+      const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); save(); };
+      addEventListener('pointermove', mv); addEventListener('pointerup', up);
+    });
+    noteLayer.append(n.el);
+    return text;
+  }
+  let saveT = 0;
+  function save() {
+    clearTimeout(saveT);
+    saveT = setTimeout(() => {
+      try {
+        localStorage.setItem(KEY, JSON.stringify({
+          strokes: marks.strokes.map(({ c, pts }) => ({ c, pts })),
+          stamps: marks.stamps.map(({ k, x, y, r, f }) => ({ k, x, y, r, f })),
+          notes: marks.notes.map(({ x, y, r, c, text }) => ({ x, y, r, c, text })),
+          moves: FRAMES.map((f) => [f.dx, f.dy]),
+        }));
+      } catch {}
+    }, 250);
+  }
+  function load() {
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch {}
+    if (!data) return;
+    (data.strokes || []).forEach((s) => { if (Array.isArray(s.pts) && s.pts.length) { marks.strokes.push(s); drawStroke(s); history.push({ t: 'stroke', s }); } });
+    (data.stamps || []).forEach((s) => { marks.stamps.push(s); drawStamp(s); history.push({ t: 'stamp', s }); if (s.f >= 0) stampedFrames.add(s.f); });
+    (data.notes || []).forEach((n) => { marks.notes.push(n); drawNote(n); history.push({ t: 'note', n }); });
+    (data.moves || []).forEach((m, i) => { if (FRAMES[i] && Array.isArray(m)) { FRAMES[i].dx = +m[0] || 0; FRAMES[i].dy = +m[1] || 0; placeFrame(i); } });
+    placeComments(); syncMini();
+    if (stampedFrames.size >= 5) confettiDone = true;
+  }
+  function undo() {
+    const a = history.pop();
+    if (!a) return toast('Nothing to undo');
+    if (a.t === 'stroke') { a.s.el?.remove(); marks.strokes = marks.strokes.filter((x) => x !== a.s); }
+    if (a.t === 'stamp') { a.s.el?.remove(); marks.stamps = marks.stamps.filter((x) => x !== a.s); }
+    if (a.t === 'note') { a.n.el?.remove(); marks.notes = marks.notes.filter((x) => x !== a.n); }
+    if (a.t === 'move') { const f = FRAMES[a.i]; f.dx = a.dx; f.dy = a.dy; placeFrame(a.i); placeComments(); syncMini(); }
+    save(); renderTools();
+  }
+  function tidyUp() {
+    FRAMES.forEach((f, i) => { if (f.dx || f.dy) history.push({ t: 'move', i, dx: f.dx, dy: f.dy }); f.dx = 0; f.dy = 0; placeFrame(i); });
+    placeComments(); syncMini(); save(); renderTools();
+    toast('Tidied up ✦');
+  }
+  function clearMarks() {
+    marks.strokes.forEach((s) => s.el?.remove());
+    marks.stamps.forEach((s) => s.el?.remove());
+    marks.notes.forEach((n) => n.el?.remove());
+    marks.strokes = []; marks.stamps = []; marks.notes = [];
+    history.length = 0; stampedFrames.clear();
+    save(); renderTools();
+    toast('Your marks are gone. Fresh board.');
+  }
+  function placeStamp(bx, by) {
+    const fi = frameEls.findIndex((el, i) => { const f = FRAMES[i]; return bx >= f.x + f.dx && bx <= f.x + f.dx + f.w && by >= f.y + f.dy && by <= f.y + f.dy + f.h; });
+    const s = { k: stampKind, x: Math.round(bx), y: Math.round(by), r: Math.round((Math.random() - 0.5) * 30), f: fi };
+    marks.stamps.push(s); drawStamp(s); history.push({ t: 'stamp', s });
+    if (fi >= 0) stampedFrames.add(fi);
+    save(); renderTools();
+    if (!confettiDone && stampedFrames.size >= 5) { confettiDone = true; confetti(); toast('Five pieces stamped. Art director energy ✦'); }
+  }
+  function placeNote(bx, by) {
+    const n = { x: Math.round(bx - 115), y: Math.round(by - 100), r: Math.round((Math.random() - 0.5) * 8), c: ['yellow', 'pink', 'mint'][marks.notes.length % 3], text: '' };
+    marks.notes.push(n);
+    const text = drawNote(n);
+    history.push({ t: 'note', n });
+    save(); renderTools();
+    setTimeout(() => text.focus(), 60);
+  }
+
+  // ── confetti easter egg ─────────────────────────────────────────────────
+  function confetti() {
+    const ctx = confettiCv.getContext('2d');
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    confettiCv.width = W() * dpr; confettiCv.height = H() * dpr;
+    const cols = ['#d7ff3a', '#ff4fd8', '#46c8ff', '#ffd23f', '#ff6b1a', '#ffffff'];
+    const ps = Array.from({ length: 140 }, () => ({ x: W() / 2, y: H() * 0.55, vx: (Math.random() - 0.5) * 16, vy: -8 - Math.random() * 14, r: Math.random() * 6.3, vr: (Math.random() - 0.5) * 0.4, w: 6 + Math.random() * 8, h: 4 + Math.random() * 6, c: cols[(Math.random() * cols.length) | 0] }));
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = (now - t0) / 1000;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W(), H());
+      ps.forEach((p) => { p.vy += 0.42; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.r += p.vr; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore(); });
+      if (t < 3.2) requestAnimationFrame(step); else ctx.clearRect(0, 0, W(), H());
+    };
+    requestAnimationFrame(step);
+  }
+
+  // ── toast ────────────────────────────────────────────────────────────────
+  let toastT = 0;
+  function toast(msg, ms = 2600) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('is-on');
+    clearTimeout(toastT);
+    toastT = setTimeout(() => toastEl.classList.remove('is-on'), ms);
+  }
+
+  // ── follow a collaborator ───────────────────────────────────────────────
+  function startFollow(i) {
+    enterExplore(`Following ${CURSORS[i].name} · Esc to stop`);
+    follow = i;
+    if (free) free.z = clamp(fitZ({ w: 1400, h: 1000 }), ZMIN, ZMAX);
+    toast(`Following ${CURSORS[i].name} · Esc to stop`, 4000);
+  }
+  function stopFollow() { if (follow >= 0) { follow = -1; } }
+  const cursorPos = (c, t) => ({ x: c.cx + Math.sin(t * c.sp * 2 + c.ph) * c.rx, y: c.cy + Math.sin(t * c.sp * 3.1 + c.ph * 1.7) * c.ry });
+
+  // ── tour: auto-scroll the story ─────────────────────────────────────────
+  let tourRaf = 0;
+  function playTour() {
+    const r = track.getBoundingClientRect();
+    const start = scrollY, top = r.top + scrollY, end = top + track.offsetHeight - innerHeight;
+    const from = Math.max(start, top), dist = end - from;
+    if (dist < 10) return;
+    const dur = 22000 * (dist / (end - top));
+    const t0 = performance.now();
+    const cancel = () => { cancelAnimationFrame(tourRaf); tourRaf = 0; ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach((ev) => removeEventListener(ev, cancel, true)); };
+    ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach((ev) => addEventListener(ev, cancel, { capture: true, passive: true }));
+    const step = (now) => { const t = Math.min(1, (now - t0) / dur); scrollTo(0, from + dist * t); if (t < 1) tourRaf = requestAnimationFrame(step); else cancel(); };
+    toast('Touring the board · any input stops it');
+    setTimeout(() => (tourRaf = requestAnimationFrame(step)), 150);
+  }
+
+  // ── pointer input ───────────────────────────────────────────────────────
+  const ptrs = new Map();
+  let gesture = null;
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.bd-hud, .bd-cmt, .bd-sticky, .bd-cursor b')) return;
+    if (e.button !== 0) return;
+    const [sx, sy] = stageXY(e);
+    ptrs.set(e.pointerId, { x: sx, y: sy });
+    if (ptrs.size === 2 && mode === 'explore') {
+      const [a, b] = [...ptrs.values()];
+      gesture = { kind: 'pinch', d0: Math.hypot(b.x - a.x, b.y - a.y), z0: free.z, m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, c0: { cx: free.cx, cy: free.cy } };
+      return;
+    }
+    const touch = e.pointerType === 'touch';
+    const frameEl = e.target.closest('.bd-frame:not(.bd-hero)');
+    const fi = frameEl ? +frameEl.dataset.i : -1;
+    if (mode === 'explore' && tool === 'marker') {
+      const p = toBoard(sx, sy);
+      const s = { c: color, pts: [[Math.round(p.x), Math.round(p.y)]] };
+      drawStroke(s);
+      gesture = { kind: 'draw', s, id: e.pointerId };
+    } else if (mode === 'explore' && tool === 'move' && fi >= 0) {
+      const p = toBoard(sx, sy);
+      gesture = { kind: 'move', i: fi, start: p, dx0: FRAMES[fi].dx, dy0: FRAMES[fi].dy, moved: false };
+      frameEls[fi].classList.add('is-dragged');
+    } else {
+      gesture = { kind: 'pan', x: sx, y: sy, moved: false, touch, fi, startCam: free ? { ...free } : null, sp: { ...story } };
+    }
+    try { stage.setPointerCapture(e.pointerId); } catch {}
+  });
+  stage.addEventListener('pointermove', (e) => {
+    const [sx, sy] = stageXY(e);
+    if (e.pointerType === 'mouse') {
+      youTag.style.transform = `translate(${sx + 16}px, ${sy + 18}px)`;
+      youTag.classList.toggle('is-on', !e.target.closest('.bd-hud'));
+      ghost.style.transform = `translate(${sx}px, ${sy}px)`;
+      ghost.classList.toggle('is-on', !e.target.closest('.bd-hud'));
+      const f3 = e.target.closest('.bd-frame.is-3d');
+      root.querySelectorAll('.bd-frame.is-3d').forEach((el) => { if (el !== f3) { el.style.removeProperty('--tx'); el.style.removeProperty('--ty'); } });
+      if (f3) { const r = f3.getBoundingClientRect(); const nx = (e.clientX - r.left) / r.width - 0.5, ny = (e.clientY - r.top) / r.height - 0.5; f3.style.setProperty('--ty', (nx * 16).toFixed(1) + 'deg'); f3.style.setProperty('--tx', (-ny * 16).toFixed(1) + 'deg'); }
+    }
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, { x: sx, y: sy });
+    if (!gesture) return;
+    if (gesture.kind === 'pinch' && ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()];
+      const d = Math.hypot(b.x - a.x, b.y - a.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      free.z = clamp(gesture.z0 * (d / Math.max(1, gesture.d0)), ZMIN, ZMAX);
+      const bx = (gesture.m0.x - W() / 2) / gesture.z0 + gesture.c0.cx, by = (gesture.m0.y - H() / 2) / gesture.z0 + gesture.c0.cy;
+      free.cx = bx - (m.x - W() / 2) / free.z; free.cy = by - (m.y - H() / 2) / free.z;
+      tween = null; stopFollow();
+    } else if (gesture.kind === 'draw') {
+      const p = toBoard(sx, sy), pts = gesture.s.pts, l = pts[pts.length - 1];
+      if (Math.hypot(p.x - l[0], p.y - l[1]) > 3 / cam.z) { pts.push([Math.round(p.x), Math.round(p.y)]); gesture.s.el.setAttribute('d', smooth(pts)); }
+    } else if (gesture.kind === 'move') {
+      const p = toBoard(sx, sy), f = FRAMES[gesture.i];
+      f.dx = Math.round(gesture.dx0 + p.x - gesture.start.x); f.dy = Math.round(gesture.dy0 + p.y - gesture.start.y);
+      gesture.moved = true; placeFrame(gesture.i);
+    } else if (gesture.kind === 'pan') {
+      const dx = sx - gesture.x, dy = sy - gesture.y;
+      if (!gesture.moved && Math.hypot(dx, dy) > 5) {
+        if (gesture.touch && mode === 'story' && Math.abs(dy) > Math.abs(dx)) { gesture = null; return; }
+        gesture.moved = true; stage.classList.add('is-dragging');
+      }
+      if (!gesture.moved) return;
+      if (mode === 'explore') { free.cx = gesture.startCam.cx - dx / free.z; free.cy = gesture.startCam.cy - dy / free.z; tween = null; stopFollow(); }
+      else { story.px = gesture.sp.px + dx; story.py = gesture.touch ? gesture.sp.py : gesture.sp.py + dy; focus = null; }
+    }
+  });
+  const endPtr = (e) => {
+    ptrs.delete(e.pointerId);
+    if (!gesture) return;
+    const g = gesture;
+    if (g.kind === 'pinch') { if (ptrs.size < 2) gesture = null; return; }
+    gesture = null;
+    stage.classList.remove('is-dragging');
+    if (g.kind === 'draw') { marks.strokes.push(g.s); history.push({ t: 'stroke', s: g.s }); save(); renderTools(); return; }
+    if (g.kind === 'move') {
+      frameEls[g.i].classList.remove('is-dragged');
+      if (g.moved) { history.push({ t: 'move', i: g.i, dx: g.dx0, dy: g.dy0 }); placeComments(); syncMini(); save(); renderTools(); }
+      return;
+    }
+    if (g.kind === 'pan' && !g.moved && e.type === 'pointerup') tap(e, g.fi);
+  };
+  stage.addEventListener('pointerup', endPtr);
+  stage.addEventListener('pointercancel', endPtr);
+  stage.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { youTag.classList.remove('is-on'); ghost.classList.remove('is-on'); } });
+
+  function tap(e, fi) {
+    const [sx, sy] = stageXY(e);
+    if (mode === 'explore' && tool === 'stamp') return placeStamp(toBoard(sx, sy).x, toBoard(sx, sy).y);
+    if (mode === 'explore' && tool === 'note') { const p = toBoard(sx, sy); return placeNote(p.x, p.y); }
+    if (fi < 0) return;
+    const f = FRAMES[fi];
+    if (f.work.type === 'ux') return openCase(f.work, frameEls[fi].querySelector('.bd-media'));
+    if (mode === 'explore') flyTo(frameBox(fi), 650);
+    else { focus = focus && focus.i === fi ? null : { i: fi, t: 0 }; story.px = story.py = 0; }
+  }
+  frameEls.forEach((el, i) => el.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    const f = FRAMES[i];
+    if (f.work.type === 'ux') openCase(f.work, el.querySelector('.bd-media'));
+    else if (mode === 'explore') flyTo(frameBox(i), 650);
+    else focus = { i, t: 0 };
+  }));
+
+  // wheel: story = page scrolls, ⌘/Ctrl+wheel (or trackpad pinch) dives into explore; explore = pan / zoom
+  stage.addEventListener('wheel', (e) => {
+    if (e.target.closest('.bd-hud')) return;
+    const zoomGesture = e.ctrlKey || e.metaKey;
+    if (mode === 'story' && !zoomGesture) return;
+    e.preventDefault();
+    if (mode === 'story') enterExplore();
+    const [sx, sy] = stageXY(e);
+    const unit = e.deltaMode === 1 ? 16 : 1;
+    if (zoomGesture) zoomAt(sx, sy, Math.exp(-e.deltaY * unit * 0.0045));
+    else { free.cx += (e.deltaX * unit) / free.z; free.cy += (e.deltaY * unit) / free.z; tween = null; stopFollow(); }
+  }, { passive: false });
+
+  // zoom buttons + minimap
+  root.querySelector('.bd-zoom').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-z]');
+    if (!b) return;
+    enterExplore();
+    zoomAt(W() / 2, H() / 2, b.dataset.z === '1' ? 1.4 : 1 / 1.4);
+  });
+  const miniJump = (e) => {
+    const r = miniSvg.getBoundingClientRect();
+    const s = Math.min(r.width / BW, r.height / BH);
+    const ox = (r.width - BW * s) / 2, oy = (r.height - BH * s) / 2;
+    const bx = (e.clientX - r.left - ox) / s, by = (e.clientY - r.top - oy) / s;
+    enterExplore();
+    flyTo({ cx: clamp(bx, 0, BW), cy: clamp(by, 0, BH), w: W() / free.z, h: H() / free.z }, 500);
+  };
+  mini.addEventListener('click', miniJump);
+
+  // keyboard shortcuts (when the board is on screen or exploring)
+  addEventListener('keydown', (e) => {
+    if (!visible && mode !== 'explore') return;
+    if (isTyping(e.target) || document.querySelector('.case.is-open')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'escape') { if (follow >= 0) { stopFollow(); toast('Stopped following'); } else exitExplore(); return; }
+    if ((e.metaKey || e.ctrlKey) && k === 'z') { e.preventDefault(); undo(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.shiftKey && e.key === '!') { enterExplore(); flyTo(OVER, 600); return; }
+    if (e.shiftKey && (e.key === '@' || e.code === 'Digit2')) { const hov = root.querySelector('.bd-frame:hover:not(.bd-hero)'); if (hov) { enterExplore(); flyTo(frameBox(+hov.dataset.i), 600); } return; }
+    const map = { h: 'hand', v: 'move', p: 'marker', m: 'marker', s: 'stamp', n: 'note' };
+    if (map[k]) { setTool(map[k]); return; }
+    if (k === 'c') { comments = !comments; root.classList.toggle('show-comments', comments); renderTools(); return; }
+    if (k === 'e') { mode === 'explore' ? exitExplore() : enterExplore(); return; }
+    if (mode !== 'explore') return;
+    if (k === '=' || k === '+') zoomAt(W() / 2, H() / 2, 1.3);
+    else if (k === '-') zoomAt(W() / 2, H() / 2, 1 / 1.3);
+    else if (k === '0') { free.z = 1; }
+    else if (k.startsWith('arrow')) { const d = 80 / free.z; if (k === 'arrowleft') free.cx -= d; if (k === 'arrowright') free.cx += d; if (k === 'arrowup') free.cy -= d; if (k === 'arrowdown') free.cy += d; tween = null; }
+    else return;
+    e.preventDefault();
+  });
+
+  addEventListener('resize', () => {
+    const next = innerHeight > innerWidth * 1.05;
+    if (next === portrait) return;
+    portrait = next; HERO = portrait ? HERO_P : HERO_L;
+    placeHero(); syncMini(); KEYS = buildKeys();
+  });
+
+  // ── render loop (only while on screen) ──────────────────────────────────
+  let visible = false, raf = 0, last = performance.now(), lastP = -1, chatT = 4;
+  function frame(now) {
+    raf = 0;
+    if (!visible && mode !== 'explore') return;
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const tsec = now / 1000;
+    const p = Lab.progress(track);
+    let target;
+    if (mode === 'explore') {
+      if (tween) {
+        const t = ease(clamp((now - tween.t0) / tween.ms, 0, 1));
+        free.cx = lerp(tween.from.cx, tween.to.cx, t); free.cy = lerp(tween.from.cy, tween.to.cy, t);
+        free.z = Math.exp(lerp(Math.log(tween.from.z), Math.log(tween.to.z), t));
+        if (t >= 1) tween = null;
+      }
+      if (follow >= 0) { const c = cursorPos(CURSORS[follow], tsec); free.cx = lerp(free.cx, c.x, 1 - Math.exp(-dt * 3)); free.cy = lerp(free.cy, c.y, 1 - Math.exp(-dt * 3)); }
+      target = free;
+    } else {
+      if (lastP >= 0 && Math.abs(p - lastP) > 0.002) { focus = null; story.px *= 0.9; story.py *= 0.9; }
+      let b = boxAt(p);
+      if (focus) {
+        focus.t = Math.min(1, focus.t + dt * 2.2);
+        const fb = frameBox(focus.i), t = ease(focus.t);
+        b = { cx: lerp(b.cx, fb.cx, t), cy: lerp(b.cy, fb.cy, t), w: Math.exp(lerp(Math.log(b.w), Math.log(fb.w), t)), h: Math.exp(lerp(Math.log(b.h), Math.log(fb.h), t)) };
+      }
+      const z = fitZ(b);
+      target = { cx: b.cx - story.px / z, cy: b.cy - story.py / z, z };
+    }
+    lastP = p;
+    const direct = !cam.ready || (mode === 'explore' && (gesture || tween || follow >= 0));
+    const k = direct ? 1 : 1 - Math.exp(-dt * 12);
+    cam.ready = true;
+    cam.cx = lerp(cam.cx, target.cx, k); cam.cy = lerp(cam.cy, target.cy, k);
+    cam.z = Math.exp(lerp(Math.log(cam.z), Math.log(target.z), k));
+
+    const z = cam.z, tx = W() / 2 - cam.cx * z, ty = H() / 2 - cam.cy * z;
+    board.style.transform = `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) scale(${z.toFixed(5)})`;
+    board.style.setProperty('--s', z.toFixed(5));
+    stage.style.setProperty('--dot', `${Math.max(8, 48 * z).toFixed(1)}px`);
+    stage.style.backgroundPosition = `${tx.toFixed(1)}px ${ty.toFixed(1)}px, 0 0`;
+    zoomTxt.textContent = `${Math.round(z * 100)}%`;
+    vp.setAttribute('x', (-tx / z).toFixed(0)); vp.setAttribute('y', (-ty / z).toFixed(0));
+    vp.setAttribute('width', (W() / z).toFixed(0)); vp.setAttribute('height', (H() / z).toFixed(0));
+
+    const draw = mode === 'explore' ? 1 : clamp((p - 0.08) / 0.12, 0, 1);
+    doodlePaths.forEach((path) => { const L = path.getTotalLength(); path.style.strokeDasharray = `${L}`; path.style.strokeDashoffset = `${(L * (1 - draw)).toFixed(1)}`; });
+
+    // collaborators wander and occasionally chat
+    chatT -= dt;
+    if (chatT <= 0) {
+      chatT = 5 + Math.random() * 4;
+      const i = (Math.random() * CURSORS.length) | 0, q = cursorEls[i].querySelector('q'), c = CURSORS[i];
+      q.textContent = c.says[(c.n = ((c.n ?? -1) + 1) % c.says.length)];
+      q.classList.add('is-on');
+      setTimeout(() => q.classList.remove('is-on'), 3200);
+    }
+    const showCursors = mode === 'explore' || p > 0.12;
+    cursorEls.forEach((el, i) => {
+      const c = cursorPos(CURSORS[i], tsec);
+      el.style.transform = `translate(${c.x.toFixed(1)}px, ${c.y.toFixed(1)}px) scale(${(1 / z).toFixed(4)})`;
+      el.style.opacity = showCursors ? '1' : '0';
+    });
+
+    const msg = mode === 'explore'
+      ? (tool === 'marker' ? 'Draw anywhere. <b>⌘Z</b> undoes. It saves in your browser.'
+        : tool === 'stamp' ? 'Click a piece to stamp it. Stamp <b>5</b> for a surprise.'
+        : tool === 'note' ? 'Click anywhere to stick a note.'
+        : tool === 'move' ? 'Drag frames around. <b>Tidy up</b> puts them back.'
+        : 'Scroll pans · <b>⌘/Ctrl+scroll</b> or pinch zooms · <b>Esc</b> returns to the story.')
+      : p < 0.12 ? 'Scroll: the header pulls back into the <b>board</b>.'
+      : p < 0.68 ? 'Press <b>E</b> (or pick a tool) to step into the board.'
+      : p < 0.9 ? '<b>▶</b> on a product frame opens its case study.'
+      : 'Stamp, doodle, leave a note. Make the board yours.';
+    if (tip.dataset.msg !== msg) { tip.dataset.msg = msg; tip.innerHTML = msg; }
+
+    raf = requestAnimationFrame(frame);
+  }
+  function start() { if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); } }
+  new IntersectionObserver((entries) => { visible = entries[0].isIntersecting; if (visible) start(); }, { rootMargin: '100px' }).observe(track);
+
+  ghost.innerHTML = STAMPS[stampKind];
+  load();
+  renderTools();
+})();
+</script>

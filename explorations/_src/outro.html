@@ -1,0 +1,25 @@
+<style>
+.lab-next { width: min(1080px, 100%); display: grid; gap: 30px; }
+.lab-next__h { margin: 0; font: italic 400 clamp(46px, 7vw, 110px)/0.9 var(--serif); letter-spacing: -0.03em; text-wrap: balance; }
+.lab-next__h span { font: 400 0.62em/1 var(--display); font-style: normal; color: var(--lime-ink); background: var(--lime); padding: 0.04em 0.2em 0.1em; border-radius: 0.16em 0.3em 0.14em 0.26em; display: inline-block; transform: rotate(-3deg); box-shadow: 0.06em 0.08em 0 #000; }
+.lab-next__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.lab-next__card { position: relative; padding: 22px 20px 20px; border-radius: 22px; display: grid; gap: 10px; align-content: start; }
+.lab-next__card b { font: 400 15px/1 var(--display); color: #111; justify-self: start; padding: 7px 11px 9px; border-radius: 10px; border: 3px solid #fff; box-shadow: 0 6px 14px -6px rgba(0,0,0,.6); }
+.lab-next__card:nth-child(1) b { background: var(--pink); rotate: -4deg; }
+.lab-next__card:nth-child(2) b { background: var(--yellow); rotate: 3deg; }
+.lab-next__card:nth-child(3) b { background: var(--mint); rotate: -2deg; }
+.lab-next__card:nth-child(4) b { background: #7fa0ff; rotate: 2deg; }
+.lab-next__card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+.lab-next__card p strong { color: var(--ink); font-weight: 600; }
+.lab-next__foot { font: 500 12.5px/1.4 var(--mono); color: var(--dim); }
+</style>
+<div class="lab-next">
+  <h2 class="lab-next__h">Next: make <span>it real</span></h2>
+  <div class="lab-next__grid">
+    <div class="lab-next__card glass"><b>1 · Your work</b><p><strong>Motion:</strong> MP4/WebM loops, 4–8 s, muted. <strong>3D:</strong> renders or short turntables. <strong>Product:</strong> one hero shot per case study plus the story.</p></div>
+    <div class="lab-next__card glass"><b>2 · Wire it in</b><p>The live WebGL header (same toys, same background) pulls back into the board. Frames lazy-load, and each case study gets its own page with this zoom transition.</p></div>
+    <div class="lab-next__card glass"><b>3 · Your call</b><p>Should visitors' doodles, stamps and notes stay private in their browser (as now) or land on a <strong>shared wall</strong> everyone sees? Shared needs a small backend.</p></div>
+    <div class="lab-next__card glass"><b>4 · Optional</b><p>Swap the pretend cursors for <strong>real live visitors</strong> (multiplayer), and add your designer's notes to the comments layer.</p></div>
+  </div>
+  <p class="lab-next__foot">Exploration file: delete the /explorations folder when we're done.</p>
+</div>

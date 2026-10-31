@@ -6,7 +6,7 @@ import { Trash, finish } from '../build';
 import { lathe, merge, place, ribbon, stickerPatch, surfaces, tint } from '../geometry';
 import { chrome, glossyPlastic, holoFoil, paperBackfaces, stickerSheet } from '../materials';
 import { FONTS, DEG, rng, text, sticker, rrPath, rrect, starPath, holoFill, fillPath, smallPrint, barcode, grain } from '../paint';
-import { decalPlane, frostedPlastic, inCell, peelLift, roundRectPath, roundRectShape, screwHead, smoothSlab, type Corners } from './_translucent';
+import { decalPlane, frostedPlastic, inCell, peelLift, roundRectShape, screwHead, smoothSlab, type Corners } from './_translucent';
 
 /*
  * POCKET ZERO: our own handheld in "cloudy plastic" (after the frosted render the user
@@ -386,13 +386,27 @@ function shellHalf(sign: number): THREE.BufferGeometry {
   if (sign > 0) {
     for (const dx of SLOTS) {
       const half = Math.sqrt(Math.max(0, GRILLE.r * GRILLE.r - dx * dx)) - 0.12;
-      s.holes.push(roundRectPath(GRILLE.x + dx, GRILLE.y, 0.18, half * 2, 0.09));
+      s.holes.push(slotPath(GRILLE.x + dx, GRILLE.y, 0.09, half - 0.09));
     }
   }
   const depth = HALF - SEAM;
-  const g = smoothSlab(s, depth, BEV, { bevelSegments: 5, curveSegments: 14 });
+  const g = smoothSlab(s, depth, BEV, { bevelSegments: 4, curveSegments: 10 });
   g.translate(0, 0, sign * (SEAM + depth / 2));
   return g;
+}
+
+/** Vertical stadium slot (low-poly, built from points so the extrusion stays light). */
+function slotPath(cx: number, cy: number, r: number, halfLen: number): THREE.Path {
+  const pts: THREE.Vector2[] = [];
+  for (let i = 0; i <= 6; i++) {
+    const a = (i / 6) * Math.PI;
+    pts.push(new THREE.Vector2(cx + Math.cos(a) * r, cy + halfLen + Math.sin(a) * r));
+  }
+  for (let i = 0; i <= 6; i++) {
+    const a = Math.PI + (i / 6) * Math.PI;
+    pts.push(new THREE.Vector2(cx + Math.cos(a) * r, cy - halfLen + Math.sin(a) * r));
+  }
+  return new THREE.Path(pts);
 }
 
 function ring(r0: number, r1: number, h: number, z: number, x: number, y: number): THREE.BufferGeometry {
@@ -537,15 +551,16 @@ function build(bctx: ObjectBuildContext) {
   }
   const shellGeo = merge(shellParts);
   shellParts.forEach((g) => g.dispose());
-  const shellMat = frostedPlastic('#f2f5f8', {
-    roughness: 0.36,
-    transmission: 0.96,
+  const shellMat = frostedPlastic('#f6f8fb', {
+    roughness: 0.4,
+    transmission: 0.9,
     thickness: 2.2,
-    attenuationColor: new THREE.Color('#dfe7ef'),
-    attenuationDistance: 9,
-    clearcoat: 0.8,
-    clearcoatRoughness: 0.22,
-    emissiveIntensity: 0.07,
+    attenuationColor: new THREE.Color('#e6edf4'),
+    attenuationDistance: 10,
+    clearcoat: 0.85,
+    clearcoatRoughness: 0.2,
+    emissive: new THREE.Color('#dfe6ee'),
+    emissiveIntensity: 0.1,
   });
   inner.add(new THREE.Mesh(shellGeo, shellMat));
 
@@ -574,7 +589,6 @@ function build(bctx: ObjectBuildContext) {
     clearcoat: 1,
     clearcoatRoughness: 0.03,
   });
-  inner.add(new THREE.Mesh(panelGeo, glossyPlastic('#0b0c0e', { roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.04 })));
   inner.add(new THREE.Mesh(screenGeo, screenMat));
 
   // ---------- printed legends on the frosted face
@@ -584,7 +598,7 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(printGeo, new THREE.MeshPhysicalMaterial({ map: print.colorTexture(), transparent: true, alphaTest: 0.02, roughness: 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 })));
 
   // ---------- D-pad, gaskets, wheel, power slider, ports (dark plastic, vertex coloured)
-  const darkParts: THREE.BufferGeometry[] = [];
+  const darkParts: THREE.BufferGeometry[] = [tint(panelGeo, '#0b0c0e')];
   darkParts.push(place(dpad(), [DPAD.x, DPAD.y, front + 0.02]));
   darkParts.push(tint(place(new THREE.CircleGeometry(1.42, 48), [DPAD.x, DPAD.y, front + 0.01]), '#3a3d44'));
   for (const b of [BTN_S, BTN_D]) darkParts.push(tint(place(new THREE.CircleGeometry(BTN_R + 0.1, 40), [b.x, b.y, front + 0.01]), '#3a3d44'));
@@ -599,9 +613,19 @@ function build(bctx: ObjectBuildContext) {
   // bottom ports: USB-C and phones jack (dark holes)
   darkParts.push(tint(place(new THREE.CapsuleGeometry(0.14, 0.6, 4, 12).rotateZ(Math.PI / 2), [0.9, -H / 2 + 0.02, 0], [0, 0, 0], [1, 1, 1]), '#08090b'));
   darkParts.push(tint(place(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 20), [-1.3, -H / 2 + 0.02, 0]), '#08090b'));
+  // dark floors inside the speaker slots
+  for (const dx of SLOTS) {
+    const half = Math.sqrt(Math.max(0, GRILLE.r * GRILLE.r - dx * dx)) - 0.12;
+    darkParts.push(tint(place(new THREE.BoxGeometry(0.16, half * 2, 0.04), [GRILLE.x + dx, GRILLE.y, front - 0.35]), '#0c0d10'));
+  }
+  {
+    const pill = new THREE.CapsuleGeometry(0.23, 0.95, 8, 20).rotateZ(Math.PI / 2);
+    pill.scale(1, 1, 0.75);
+    darkParts.push(tint(place(pill, [PILL.x, PILL.y, front + 0.1]), TEAL));
+  }
   const darkGeo = merge(darkParts);
   darkParts.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(darkGeo, glossyPlastic('#ffffff', { vertexColors: true, roughness: 0.34, clearcoat: 0.7, clearcoatRoughness: 0.15 })));
+  inner.add(new THREE.Mesh(darkGeo, glossyPlastic('#ffffff', { vertexColors: true, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.08 })));
 
   // ---------- S / D buttons
   const btnSurf = new Surface(512, 256, bctx, { density: 0.8 });
@@ -612,12 +636,6 @@ function build(bctx: ObjectBuildContext) {
   bs.dispose();
   bd.dispose();
   inner.add(new THREE.Mesh(btnGeo, new THREE.MeshPhysicalMaterial({ map: btnSurf.colorTexture(), roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.08 })));
-
-  // ---------- teal menu pill
-  const pill = new THREE.CapsuleGeometry(0.23, 0.95, 8, 20).rotateZ(Math.PI / 2);
-  pill.scale(1, 1, 0.75);
-  place(pill, [PILL.x, PILL.y, front + 0.1]);
-  inner.add(new THREE.Mesh(pill, glossyPlastic(TEAL, { roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05, emissive: '#0a6f7d', emissiveIntensity: 0.25 })));
 
   // ---------- chrome: back screws, port rims
   const chr: THREE.BufferGeometry[] = [];
@@ -676,16 +694,15 @@ function build(bctx: ObjectBuildContext) {
     guts.push(tint(place(new THREE.CylinderGeometry(0.485, 0.485, 0.9, 28).rotateZ(Math.PI / 2), [-1.7, y, -0.62]), '#121314'));
     guts.push(tint(place(new THREE.CylinderGeometry(0.2, 0.2, 0.3, 16).rotateZ(Math.PI / 2), [2.08, y, -0.62]), '#d9dde2'));
   }
-  const gutsGeo = merge(guts);
-  guts.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(gutsGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.15, clearcoat: 0.3 })));
   // amber flex cable from the LCD down to the board
   {
     const pts = [new THREE.Vector3(-1.4, 1.0, 0.45), new THREE.Vector3(-1.4, 0.75, 0.3), new THREE.Vector3(-1.4, 0.4, 0.13), new THREE.Vector3(-1.4, -0.4, 0.1)];
     const side = new THREE.Vector3(0.6, 0, 0);
-    const flex = ribbon(pts, () => side);
-    inner.add(new THREE.Mesh(flex, new THREE.MeshPhysicalMaterial({ color: '#e08a22', roughness: 0.35, clearcoat: 0.6, side: THREE.DoubleSide })));
+    guts.push(tint(ribbon(pts, () => side), '#e08a22'));
   }
+  const gutsGeo = merge(guts);
+  guts.forEach((g) => g.dispose());
+  inner.add(new THREE.Mesh(gutsGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.15, clearcoat: 0.3, side: THREE.DoubleSide })));
 
   // ---------- battery LED (on the glass, pulses gently)
   const ledGeo = new THREE.SphereGeometry(0.11, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2);
@@ -706,7 +723,7 @@ function build(bctx: ObjectBuildContext) {
   paper.push(stickerPatch(backFace, 0, 2.65, 6.2, 4.5, 0, cells.back.uv, { nx: 4, ny: 4, offset: 0.002 }));
   const paperGeo = merge(paper);
   paper.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.42, clearcoat: 0.55 }), '#f1ece0')));
+  inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.42, clearcoat: 0.55, emissive: '#ffffff', emissiveMap: sheetTex, emissiveIntensity: 0.12 }), '#f1ece0')));
   const starGeo = stickerPatch(backFace, 2.25, -1.35, 2.0, 2.0, -14 * DEG, cells.star.uv, { nx: 10, ny: 10, offset: 0.004, lift: peelLift(0.3, 1, 1, 0.4) });
   inner.add(new THREE.Mesh(starGeo, holoFoil(sheetTex, { side: THREE.DoubleSide, forceSinglePass: true, metalness: 0.3, roughness: 0.25 })));
 

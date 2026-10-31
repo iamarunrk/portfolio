@@ -362,13 +362,13 @@ function paintLabel(s: Surface, oy: number, spec: LabelSpec): void {
 function paintPack(s: Surface): void {
   const c = s.c;
   const N = s.w;
-  c.fillStyle = '#3a2116';
+  c.fillStyle = '#6a3a1e';
   c.fillRect(0, 0, N, N);
   const r = rng(91);
   const cx = N / 2;
   for (let i = 0; i < 70; i++) {
     const rad = (N / 2) * (0.42 + (i / 70) * 0.58);
-    c.strokeStyle = r() > 0.5 ? 'rgba(120,70,40,0.55)' : 'rgba(20,10,6,0.5)';
+    c.strokeStyle = r() > 0.5 ? 'rgba(170,105,60,0.55)' : 'rgba(40,20,10,0.45)';
     c.lineWidth = 1 + r() * 2.5;
     c.beginPath();
     c.arc(cx, cx, rad, 0, Math.PI * 2);
@@ -614,7 +614,7 @@ function build(bctx: ObjectBuildContext) {
   }
   const paperGeo = merge(paper);
   paper.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.42, clearcoat: 0.55 }), '#f1ece0')));
+  inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.42, clearcoat: 0.55, emissive: '#ffffff', emissiveMap: sheetTex, emissiveIntensity: 0.12 }), '#f1ece0')));
 
   // ---------- idle: the reels turn (constant tape speed, so the small pack spins faster)
   const update = (t: number) => {

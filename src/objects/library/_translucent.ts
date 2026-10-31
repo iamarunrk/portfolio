@@ -12,7 +12,15 @@ import type { C2D } from '../paint';
 
 export type Corners = [number, number, number, number]; // tl, tr, br, bl
 
-/** Append a rounded rectangle (centre cx, cy) to a Shape or Path. Corner radii [tl, tr, br, bl]. */
+/** Segments for a quarter corner of radius r (explicit points keep extrusions light). */
+function cornerSegs(r: number): number {
+  return Math.max(2, Math.min(12, Math.round(3 + r * 7)));
+}
+
+/**
+ * Append a rounded rectangle (centre cx, cy) to a Shape or Path as explicit points, so the
+ * extruder never over-subdivides small corners. Corner radii [tl, tr, br, bl].
+ */
 export function roundRect(p: THREE.Path, cx: number, cy: number, w: number, h: number, r: number | Corners): void {
   const rr = typeof r === 'number' ? [r, r, r, r] : r;
   const [tl, tr, br, bl] = rr.map((v) => Math.max(0, Math.min(v, w / 2 - 1e-4, h / 2 - 1e-4)));
@@ -20,15 +28,26 @@ export function roundRect(p: THREE.Path, cx: number, cy: number, w: number, h: n
   const x1 = cx + w / 2;
   const y0 = cy - h / 2;
   const y1 = cy + h / 2;
-  p.moveTo(x0 + bl, y0);
-  p.lineTo(x1 - br, y0);
-  if (br > 0) p.absarc(x1 - br, y0 + br, br, -Math.PI / 2, 0, false);
-  p.lineTo(x1, y1 - tr);
-  if (tr > 0) p.absarc(x1 - tr, y1 - tr, tr, 0, Math.PI / 2, false);
-  p.lineTo(x0 + tl, y1);
-  if (tl > 0) p.absarc(x0 + tl, y1 - tl, tl, Math.PI / 2, Math.PI, false);
-  p.lineTo(x0, y0 + bl);
-  if (bl > 0) p.absarc(x0 + bl, y0 + bl, bl, Math.PI, Math.PI * 1.5, false);
+  const pts: [number, number][] = [];
+  const corner = (ox: number, oy: number, rad: number, a0: number) => {
+    const n = cornerSegs(rad);
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (i / n) * (Math.PI / 2);
+      pts.push([ox + Math.cos(a) * rad, oy + Math.sin(a) * rad]);
+    }
+  };
+  // counter-clockwise from the bottom edge
+  if (br > 0) corner(x1 - br, y0 + br, br, -Math.PI / 2);
+  else pts.push([x1, y0]);
+  if (tr > 0) corner(x1 - tr, y1 - tr, tr, 0);
+  else pts.push([x1, y1]);
+  if (tl > 0) corner(x0 + tl, y1 - tl, tl, Math.PI / 2);
+  else pts.push([x0, y1]);
+  if (bl > 0) corner(x0 + bl, y0 + bl, bl, Math.PI);
+  else pts.push([x0, y0]);
+  p.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) p.lineTo(pts[i][0], pts[i][1]);
+  p.lineTo(pts[0][0], pts[0][1]);
 }
 
 export function roundRectShape(cx: number, cy: number, w: number, h: number, r: number | Corners): THREE.Shape {
@@ -43,9 +62,14 @@ export function roundRectPath(cx: number, cy: number, w: number, h: number, r: n
   return p;
 }
 
-export function circlePathShape(cx: number, cy: number, r: number): THREE.Path {
+/** Circle as an explicit polygon (segment count scales with the radius). */
+export function circlePathShape(cx: number, cy: number, r: number, n = Math.max(12, Math.min(64, Math.round(10 + r * 26)))): THREE.Path {
   const p = new THREE.Path();
-  p.absarc(cx, cy, r, 0, Math.PI * 2, false);
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    if (i === 0) p.moveTo(cx + r, cy);
+    else p.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
   return p;
 }
 

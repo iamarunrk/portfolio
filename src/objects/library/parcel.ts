@@ -653,10 +653,10 @@ function build(bctx: ObjectBuildContext) {
       map: tape.colorTexture(),
       transparent: false,
       alphaTest: 0.5,
-      roughness: 0.3,
+      roughness: 0.34,
       metalness: 0,
-      clearcoat: 1,
-      clearcoatRoughness: 0.1,
+      clearcoat: 0.55,
+      clearcoatRoughness: 0.16,
     }),
     '#efe4c8',
   );

@@ -6,7 +6,7 @@ import { Trash, finish } from '../build';
 import { lathe, merge, place, ribbon, stickerPatch, surfaces, tint } from '../geometry';
 import { chrome, glossyPlastic, holoFoil, paperBackfaces, stickerSheet } from '../materials';
 import { FONTS, DEG, rng, text, sticker, rrPath, rrect, starPath, holoFill, fillPath, smallPrint, barcode, grain } from '../paint';
-import { decalPlane, frostedPlastic, inCell, peelLift, roundRectShape, screwHead, smoothSlab, type Corners } from './_translucent';
+import { decalPlane, frostedPlastic, inCell, peelLift, roundRect, roundRectShape, screwHead, smoothSlab, type Corners } from './_translucent';
 
 /*
  * POCKET ZERO: our own handheld in "cloudy plastic" (after the frosted render the user
@@ -21,7 +21,6 @@ const H = 13.8;
 const D = 2.4;
 const HALF = D / 2;
 const BEV = 0.3;
-const SEAM = 0.03;
 const CORNERS: Corners = [0.75, 0.75, 2.1, 0.9];
 
 const PANEL = { cx: 0, cy: 3.55, w: 7.4, h: 5.7, r: 0.42, t: 0.1 };
@@ -381,18 +380,19 @@ function bodyShape(): THREE.Shape {
   return roundRectShape(0, 0, W - 2 * BEV, H - 2 * BEV, c);
 }
 
-function shellHalf(sign: number): THREE.BufferGeometry {
-  const s = bodyShape();
-  if (sign > 0) {
-    for (const dx of SLOTS) {
-      const half = Math.sqrt(Math.max(0, GRILLE.r * GRILLE.r - dx * dx)) - 0.12;
-      s.holes.push(slotPath(GRILLE.x + dx, GRILLE.y, 0.09, half - 0.09));
-    }
-  }
-  const depth = HALF - SEAM;
-  const g = smoothSlab(s, depth, BEV, { bevelSegments: 4, curveSegments: 10 });
-  g.translate(0, 0, sign * (SEAM + depth / 2));
-  return g;
+/** The shell: one soft slab (no holes; the speaker slots are dark inlays). */
+function shellBody(): THREE.BufferGeometry {
+  return smoothSlab(bodyShape(), D, BEV, { bevelSegments: 5, curveSegments: 10 });
+}
+
+/** Thin parting line where the two moulded halves meet. */
+function seamGeometry(): THREE.BufferGeometry {
+  const path = new THREE.Path();
+  roundRect(path, 0, 0, W + 0.012, H + 0.012, CORNERS.map((c) => c + 0.006) as Corners);
+  const pts = path.getSpacedPoints(260).map((p) => new THREE.Vector3(p.x, p.y, 0));
+  pts.push(pts[0].clone());
+  const half = new THREE.Vector3(0, 0, 0.03);
+  return ribbon(pts, () => half);
 }
 
 /** Vertical stadium slot (low-poly, built from points so the extrusion stays light). */
@@ -533,7 +533,7 @@ function build(bctx: ObjectBuildContext) {
   const front = HALF;
 
   // ---------- cloudy shell (two halves) + raised rims and the battery door
-  const shellParts: THREE.BufferGeometry[] = [shellHalf(1), shellHalf(-1)];
+  const shellParts: THREE.BufferGeometry[] = [shellBody()];
   shellParts.push(ring(1.42, 1.62, 0.14, front - 0.02, DPAD.x, DPAD.y));
   shellParts.push(ring(BTN_R + 0.1, BTN_R + 0.26, 0.12, front - 0.02, BTN_S.x, BTN_S.y));
   shellParts.push(ring(BTN_R + 0.1, BTN_R + 0.26, 0.12, front - 0.02, BTN_D.x, BTN_D.y));
@@ -613,11 +613,13 @@ function build(bctx: ObjectBuildContext) {
   // bottom ports: USB-C and phones jack (dark holes)
   darkParts.push(tint(place(new THREE.CapsuleGeometry(0.14, 0.6, 4, 12).rotateZ(Math.PI / 2), [0.9, -H / 2 + 0.02, 0], [0, 0, 0], [1, 1, 1]), '#08090b'));
   darkParts.push(tint(place(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 20), [-1.3, -H / 2 + 0.02, 0]), '#08090b'));
-  // dark floors inside the speaker slots
+  // speaker slots (dark inlays) and the seam line
   for (const dx of SLOTS) {
     const half = Math.sqrt(Math.max(0, GRILLE.r * GRILLE.r - dx * dx)) - 0.12;
-    darkParts.push(tint(place(new THREE.BoxGeometry(0.16, half * 2, 0.04), [GRILLE.x + dx, GRILLE.y, front - 0.35]), '#0c0d10'));
+    const slot = new THREE.ShapeGeometry(new THREE.Shape(slotPath(0, 0, 0.09, half - 0.09).getPoints()));
+    darkParts.push(tint(place(slot, [GRILLE.x + dx, GRILLE.y, front + 0.004]), '#121317'));
   }
+  darkParts.push(tint(seamGeometry(), '#9aa3ad'));
   {
     const pill = new THREE.CapsuleGeometry(0.23, 0.95, 8, 20).rotateZ(Math.PI / 2);
     pill.scale(1, 1, 0.75);

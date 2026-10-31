@@ -35,6 +35,11 @@ uniform vec4 uPulses[4];  // xy = 0..1 position, z = age (s), w = amplitude
 uniform float uGrain;
 uniform float uVignette;
 uniform float uOutSrgb;   // 1 = write sRGB directly (thumbnails / readback)
+// UI liquid glass: chrome panels (island, pills) lens the finished background in every browser.
+#define MAX_GLASS 8
+uniform vec4 uGlassRect[MAX_GLASS];   // xy = centre, zw = half size (device px, GL origin bottom-left)
+uniform vec4 uGlassShape[MAX_GLASS];  // x = corner radius px, y = strength 0..1, z = bezel width px
+uniform int uGlassCount;
 uniform vec3 uCol[4];
 uniform vec3 uLab[4];
 varying vec2 vUv;
@@ -526,8 +531,73 @@ vec3 material(vec2 uv) {
 `;
 
 const MAIN = /* glsl */ `
+/*
+ * UI liquid glass (after kube.io's CSS/SVG study, done in-shader so Safari gets it too).
+ * Each panel is a slab of glass whose rim is a convex squircle bezel h(t) = (1 - (1 - t)^4)^(1/4).
+ * A straight-down view ray refracts at that surface (Snell, IOR 1.5) and lands on the background
+ * shifted toward the panel centre, so the rim magnifies and bends what is behind it, while the
+ * flat middle stays clear.
+ */
+float glassHit(vec2 p, out vec2 nrm, out float t, out float strength, out float bezel) {
+  nrm = vec2(0.0); t = 1.0; strength = 0.0; bezel = 1.0;
+  for (int i = 0; i < MAX_GLASS; i++) {
+    if (i >= uGlassCount) break;
+    vec4 R = uGlassRect[i];
+    vec2 lp = p - R.xy;
+    if (any(greaterThan(abs(lp), R.zw + 1.0))) continue;
+    vec4 S = uGlassShape[i];
+    float r = min(S.x, min(R.z, R.w));
+    vec2 q = abs(lp) - R.zw + r;
+    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    if (d > 0.5) continue;
+    // exact outward normal of a rounded box: radial in the corners, axis-aligned on the edges
+    vec2 sg = vec2(lp.x < 0.0 ? -1.0 : 1.0, lp.y < 0.0 ? -1.0 : 1.0);
+    if (q.x > 0.0 && q.y > 0.0) nrm = normalize(q) * sg;
+    else nrm = q.x > q.y ? vec2(sg.x, 0.0) : vec2(0.0, sg.y);
+    bezel = max(S.z, 1.0);
+    t = clamp(-d / bezel, 0.0, 1.0);
+    strength = S.y;
+    return clamp(0.5 - d, 0.0, 1.0);
+  }
+  return 0.0;
+}
+
+/** Lateral shift (px) of the refracted ray at bezel position t (0 = rim, 1 = flat top). */
+float glassShift(float t, float bezel) {
+  float u = 1.0 - t;
+  float u4 = u * u * u * u;
+  float base = max(1.0 - u4, 1e-4);
+  float h = pow(base, 0.25);
+  float dh = u * u * u * pow(base, -0.75);
+  float thick = bezel * 2.1;
+  float th = atan(min(dh * thick / bezel, 14.0));
+  float thr = asin(sin(th) / 1.5);
+  return thick * h * tan(th - thr);
+}
+
 void main() {
-  vec3 c = material(vUv);
+  vec3 c;
+  vec2 gn;
+  float gt, gs, gb;
+  float gm = uGlassCount > 0 ? glassHit(gl_FragCoord.xy, gn, gt, gs, gb) : 0.0;
+  if (gm > 0.0 && gs > 0.001) {
+    vec2 d = -gn * glassShift(gt, gb) * gs / uRes;
+    float ab = 0.1 + 0.16 * gs;
+    vec3 c1 = material(vUv + d * (1.0 + ab));
+    vec3 c2 = material(vUv + d * (1.0 - ab));
+    c = vec3(c1.r, 0.5 * (c1.g + c2.g), c2.b);
+    // bevel light: the rim facing the key light (top-left) brightens, the far rim dips
+    float rim = 1.0 - smoothstep(0.0, 1.0, gt);
+    float facing = dot(gn, normalize(vec2(-0.55, 0.84)));
+    vec3 lit = c + vec3(0.11) * rim * rim * max(facing, 0.0);
+    lit *= 1.0 - 0.12 * rim * max(-facing, 0.0);
+    // Liquid Glass lifts vibrancy a little
+    float l = luma(lit);
+    lit = mix(vec3(l), lit, 1.0 + 0.22 * gs);
+    c = mix(c, lit, gm * gs);
+  } else {
+    c = material(vUv);
+  }
   c = applyFx(c, vUv);
   c = clamp(c, 0.0, 1.0);
   c += (ign(gl_FragCoord.xy) - 0.5) / 255.0;   // final +-0.5/255 dither: no banding

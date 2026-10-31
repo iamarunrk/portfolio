@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AXES, AXIS_COLOR, registerOverlay, type Axis, type GizmoFrame } from '../scene/gizmo';
 import { registry } from '../scene/registry';
 import { useStore } from '../store';
+import { useLiquidGlass } from '../ui/liquidGlass';
 import './overlay.css';
 
 const CORNERS = [0, 1, 2, 3] as const;
@@ -33,6 +34,7 @@ export function GizmoOverlay() {
   const frameSize = useRef<HTMLDivElement>(null);
   const valuePill = useRef<HTMLDivElement>(null);
   const last = useRef({ obj: '', title: '', pill: '' });
+  useLiquidGlass(selPill, { bezel: 12 });
 
   useEffect(() => {
     const setStyle = (el: HTMLElement | SVGElement | null, prop: 'display' | 'opacity' | 'pointerEvents', v: string) => {
@@ -174,7 +176,7 @@ export function GizmoOverlay() {
         </g>
       </svg>
 
-      <div ref={selPill} className="sel-pill" style={{ opacity: 0 }}>
+      <div ref={selPill} className="sel-pill ui-glass" style={{ opacity: 0 }}>
         {obj && (
           <span key={obj.id} className="sel-touch-hint" aria-hidden>
             pinch to scale · twist to rotate · drag a ring to tumble

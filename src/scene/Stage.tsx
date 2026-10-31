@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { BackgroundEngine } from '../bg/BackgroundEngine';
+import { BackgroundEngine, type GlassPanel } from '../bg/BackgroundEngine';
+import { collectGlassPanels, queueToneUpdate, updateGlassTones } from '../ui/liquidGlass';
 import { CAMERA_FOV, CAMERA_Z, computeFrame } from '../layout';
 import { OBJECTS } from '../objects';
 import { useStore } from '../store';
@@ -92,7 +93,21 @@ function Background() {
     return () => clearTimeout(id);
   }, [engine, bg]);
 
-  useFrame((_, dt) => engine?.update(Math.min(dt, 0.1)));
+  // Chrome glass tones follow what is actually behind each panel; animated shaders drift, so re-check.
+  useEffect(() => {
+    if (!engine) return;
+    queueToneUpdate(160);
+    const id = window.setInterval(updateGlassTones, 1500);
+    return () => window.clearInterval(id);
+  }, [engine, bg]);
+
+  // Every frame: tell the background where the Liquid Glass chrome sits so it lenses itself there.
+  const panels = useRef<GlassPanel[]>([]);
+  useFrame((_, dt) => {
+    if (!engine) return;
+    engine.setGlass(collectGlassPanels(panels.current));
+    engine.update(Math.min(dt, 0.1));
+  });
   return engine ? <primitive object={engine.mesh} /> : null;
 }
 

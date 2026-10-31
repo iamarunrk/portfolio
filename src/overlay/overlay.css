@@ -115,14 +115,9 @@
   gap: 6px;
   padding: 5px 5px 5px 11px;
   border-radius: 999px;
-  background: rgba(14, 14, 16, 0.82);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  color: #f4f4f5;
+  /* surface, rim and tone come from .ui-glass (src/ui/ui.css) */
+  isolation: isolate;
+  color: var(--ui-text, #f4f4f5);
   font: 500 12px/1 'Geist', system-ui, sans-serif;
   white-space: nowrap;
   transition: opacity 0.18s ease;
@@ -140,7 +135,7 @@
   letter-spacing: -0.01em;
 }
 .sel-tag {
-  color: #a1a1aa;
+  color: var(--ui-muted, #a1a1aa);
   font-weight: 400;
   max-width: 180px;
   overflow: hidden;
@@ -156,8 +151,8 @@
   justify-content: center;
   padding: 0 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #f4f4f5;
+  background: var(--ui-fill, rgba(255, 255, 255, 0.08));
+  color: var(--ui-text, #f4f4f5);
   font: 500 11.5px/1 'Geist', system-ui, sans-serif;
   cursor: pointer;
   transition:
@@ -175,7 +170,7 @@
 .sel-sep {
   width: 1px;
   height: 18px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--ui-line, rgba(255, 255, 255, 0.14));
 }
 
 @media (max-width: 520px) {

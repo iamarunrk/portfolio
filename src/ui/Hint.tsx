@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { IconClose, IconSparkle } from './icons';
 import { keepKeys } from './keys';
+import { useGlassRef } from './liquidGlass';
 import './ui.css';
 
 const HINT_KEY = 'once-upon-a-time:hint';
@@ -70,6 +71,7 @@ export function Hint() {
   }, [selected, islandTab, dismiss]);
 
   const visible = phase === 'open' || phase === 'closing';
+  const glassRef = useGlassRef<HTMLDivElement>();
 
   return (
     <>
@@ -79,6 +81,7 @@ export function Hint() {
       </div>
       {visible ? (
         <div
+          ref={glassRef}
           className="ui ui-glass ui-hint ui-hideable"
           data-state={phase}
           data-hidden={hidden || undefined}

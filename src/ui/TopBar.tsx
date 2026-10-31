@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { randomBg } from '../bg/presets';
 import { IconDice, IconEye, IconEyeOff, IconReset, ZeroGlyph } from './icons';
 import { keepKeys } from './keys';
+import { useLiquidGlass } from './liquidGlass';
 import './ui.css';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -25,6 +26,11 @@ export function TopBar() {
   const [rolls, setRolls] = useState(0);
   const hideRef = useRef<HTMLButtonElement>(null);
   const showRef = useRef<HTMLButtonElement>(null);
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  useLiquidGlass(leftRef);
+  useLiquidGlass(rightRef);
+  useLiquidGlass(showRef);
   const focusNext = useRef<'show' | 'hide' | null>(null);
 
   // Move focus to whichever toggle is visible after hide/show, so keyboard users don't get stranded.
@@ -66,7 +72,7 @@ export function TopBar() {
 
   return (
     <>
-      <div className="ui ui-glass ui-top ui-top--left ui-hideable" data-hidden={hidden || undefined} inert={hidden}>
+      <div ref={leftRef} className="ui ui-glass ui-top ui-top--left ui-hideable" data-hidden={hidden || undefined} inert={hidden}>
         <ZeroGlyph className="ui-logo" size={20} />
         <span className="ui-file" title="once-upon-a-time">
           once-upon-a-time
@@ -82,6 +88,7 @@ export function TopBar() {
       </div>
 
       <div
+        ref={rightRef}
         className="ui ui-glass ui-top ui-top--right ui-hideable"
         role="group"
         aria-label="Canvas actions"

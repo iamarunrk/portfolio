@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Collectibles harness</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bagel+Fat+One&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Permanent+Marker&family=Rubik+Mono+One&family=Shrikhand&family=Space+Mono:wght@400;700&display=swap"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #0b0b0d;
+        color: #ddd;
+        font: 12px/1.4 'Geist Mono', ui-monospace, monospace;
+      }
+      canvas {
+        display: block;
+      }
+      #hud {
+        position: fixed;
+        left: 10px;
+        bottom: 8px;
+        white-space: pre;
+        pointer-events: none;
+        opacity: 0.85;
+      }
+      #nav {
+        position: fixed;
+        right: 10px;
+        top: 8px;
+      }
+      #nav a {
+        color: inherit;
+        margin-left: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <div id="nav"></div>
+    <script type="module" src="./objects.ts"></script>
+  </body>
+</html>

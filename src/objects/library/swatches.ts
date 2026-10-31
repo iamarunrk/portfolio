@@ -357,7 +357,7 @@ function build(bctx: ObjectBuildContext) {
       return 0.45 * k * k;
     },
   });
-  const holo = stickerPatch(onStrip(0), -1.05, SL - PIVOT - 6.4, 1.55, 1.55, -18 * DEG, cellHolo.uv, {
+  const holo = stickerPatch(onStrip(1), -1.35, SL - PIVOT - 0.75, 1.5, 1.5, -18 * DEG, cellHolo.uv, {
     nx: 6,
     ny: 6,
     offset: 0.006,

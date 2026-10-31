@@ -117,10 +117,10 @@ function paintFroth(s: Surface): void {
   const c = s.c;
   const W = s.w;
   const g = c.createRadialGradient(W * 0.48, W * 0.46, W * 0.05, W / 2, W / 2, W * 0.5);
-  g.addColorStop(0, '#e2ad74');
-  g.addColorStop(0.62, '#d79a5c');
-  g.addColorStop(0.86, '#c47c3e');
-  g.addColorStop(1, '#a9612a');
+  g.addColorStop(0, '#f0bf86');
+  g.addColorStop(0.55, '#e3a764');
+  g.addColorStop(0.84, '#cf8540');
+  g.addColorStop(1, '#a95f24');
   c.fillStyle = g;
   c.fillRect(0, 0, W, W);
   const r = rng(31);
@@ -133,7 +133,7 @@ function paintFroth(s: Surface): void {
     const rad = 2 + r() * (d < W * 0.3 ? 9 : 5);
     c.beginPath();
     c.arc(x, y, rad, 0, Math.PI * 2);
-    c.fillStyle = `rgba(250,226,190,${0.25 + r() * 0.35})`;
+    c.fillStyle = `rgba(255,236,206,${0.3 + r() * 0.4})`;
     c.fill();
     c.lineWidth = 1;
     c.strokeStyle = 'rgba(140,80,30,0.3)';
@@ -290,12 +290,12 @@ function build(bctx: ObjectBuildContext) {
   });
   glassGeo.translate(0, SAUCER_Y, 0);
   const glassMat = glass({
-    color: '#f4fff8',
+    color: '#fbfffc',
     roughness: 0.03,
     thickness: 0.9,
     ior: 1.5,
-    attenuationColor: new THREE.Color('#cfeedd'),
-    attenuationDistance: 5,
+    attenuationColor: new THREE.Color('#e4f5ea'),
+    attenuationDistance: 8,
     clearcoat: 1,
     clearcoatRoughness: 0.02,
     side: THREE.DoubleSide,
@@ -313,7 +313,7 @@ function build(bctx: ObjectBuildContext) {
   liq.push([innerR(FILL_Y) - 0.06, FILL_Y]);
   const liqGeo = lathe(fillet(liq, liq.map((_, i) => (i === 0 || i === liq.length - 1 ? 0 : 0.05)), 3), { segments: 72 });
   liqGeo.translate(0, SAUCER_Y, 0);
-  inner.add(new THREE.Mesh(liqGeo, new THREE.MeshPhysicalMaterial({ color: '#b66a31', roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.1, sheen: 0.4, sheenColor: new THREE.Color('#f3c08a') })));
+  inner.add(new THREE.Mesh(liqGeo, new THREE.MeshPhysicalMaterial({ color: '#c47a35', roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.1, sheen: 0.4, sheenColor: new THREE.Color('#f3c08a'), emissive: '#5a2606', emissiveIntensity: 0.35 })));
   const froth = new Surface(512, 512, bctx);
   paintFroth(froth);
   const topR = innerR(FILL_Y) - 0.02;
@@ -331,7 +331,7 @@ function build(bctx: ObjectBuildContext) {
     { segments: 72, uv: (x, _y, z) => [0.5 + x / (2 * topR), 0.5 - z / (2 * topR)] },
   );
   top.translate(0, SAUCER_Y, 0);
-  inner.add(new THREE.Mesh(top, new THREE.MeshPhysicalMaterial({ map: froth.colorTexture(), roughness: 0.48, clearcoat: 0.35, clearcoatRoughness: 0.3, sheen: 0.5, sheenColor: new THREE.Color('#fff0d8') })));
+  inner.add(new THREE.Mesh(top, new THREE.MeshPhysicalMaterial({ map: froth.colorTexture(), roughness: 0.48, clearcoat: 0.35, clearcoatRoughness: 0.3, sheen: 0.5, sheenColor: new THREE.Color('#fff0d8'), emissive: '#4a2208', emissiveIntensity: 0.25 })));
 
   // ---------- SHIP-G biscuit leaning on the glass
   const bis = new Surface(512, 340, bctx, { bump: { base: 0.5, density: 0.6 } });
@@ -340,7 +340,7 @@ function build(bctx: ObjectBuildContext) {
   const BH = 3.4;
   const bisGeo = biscuitGeometry(BW, BH, 0.3);
   {
-    const a = 30 * DEG;
+    const a = 66 * DEG;
     const radial = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
     const base = radial.clone().multiplyScalar(3.55).setY(0.62);
     const tip = radial.clone().multiplyScalar(2.52).setY(3.6);
@@ -373,7 +373,7 @@ function build(bctx: ObjectBuildContext) {
   const wall = revolveSurface(ribTop);
   const cm = (cell: { w: number; h: number }, w: number) => (w * cell.h) / cell.w;
   const patches: THREE.BufferGeometry[] = [];
-  patches.push(stickerPatch(wall.at, 0, wall.sAtY(3.35 + SAUCER_Y), 3.7, cm(cells.cMain, 3.7), 3 * DEG, cells.cMain.uv, { nx: 20, ny: 8, offset: 0.012 }));
+  patches.push(stickerPatch(wall.at, 0.42, wall.sAtY(3.3 + SAUCER_Y), 3.7, cm(cells.cMain, 3.7), 3 * DEG, cells.cMain.uv, { nx: 20, ny: 8, offset: 0.012 }));
   patches.push(
     stickerPatch(wall.at, -Math.PI * 2.4 * 0.78, wall.sAtY(2.3 + SAUCER_Y), 1.55, 1.55, 14 * DEG, cells.cPrice.uv, {
       nx: 10,
@@ -413,7 +413,7 @@ export const chai: LibraryDef = {
   name: 'Cutting Chai',
   tagline: 'standup fuel',
   category: 'food',
-  defaultRotation: [0.34, -0.3, 0.04],
+  defaultRotation: [0.42, -0.3, 0.04],
   build,
 };
 export default chai;

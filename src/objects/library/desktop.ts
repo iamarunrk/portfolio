@@ -6,7 +6,7 @@ import { Surface, StickerSheet, canvasTexture } from '../textures';
 import { Trash, finish } from '../build';
 import { lathe, fillet, merge, parametric, place, stickerPatch, surfaces, tint, type P2, type SurfacePoint } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
-import { FONTS, DEG, rng, text, sticker, rrPath, circlePath, fillPath, smallPrint, starPath, hexA, type C2D } from '../paint';
+import { FONTS, DEG, rng, text, arcText, sticker, rrPath, circlePath, fillPath, smallPrint, starPath, hexA, type C2D } from '../paint';
 import { inCell, sgnpow, superDisc, frameRing, crtFinish, cable } from './_computers';
 
 /*
@@ -16,13 +16,13 @@ import { inCell, sgnpow, superDisc, frameRing, crtFinish, cable } from './_compu
  */
 
 const CREAM = '#efe9dc';
-const BASE = { w: 32, h: 7, d: 26, r: 1.6 };
-const MON = { w: 30, h: 25, d: 12, r: 3.2, cy: 19.9, cz: 1 };
+const BASE = { w: 32, h: 8, d: 26, r: 1.6 };
+const MON = { w: 30, h: 25, d: 12, r: 3.2, cy: 8 + 0.4 + 12.5, cz: 1 };
 const MON_FRONT = MON.cz + MON.d / 2; // z = 7
 const MON_TOP = MON.cy + MON.h / 2; // y = 32.4
-const SCR = { cy: 20.5, hw: 8.8, hh: 6.6 };
-const KB = { w: 25, h: 2.2, d: 10.5, cz: 20.3 };
-const MOUSE = { x: 21.6, z: 19.6, yaw: -10 * DEG };
+const SCR = { cy: MON.cy + 0.6, hw: 8.8, hh: 6.6 };
+const KB = { w: 25, h: 2.2, d: 10.5, cz: 22.6 };
+const MOUSE = { x: 21.8, z: 21.6, yaw: -10 * DEG };
 
 // ------------------------------------------------------------------ screen
 
@@ -218,7 +218,29 @@ function paintStickers(sheet: StickerSheet) {
       text(q, 'IT!', 0, 46, { size: 46, family: FONTS.archivoBlack, align: 'center', color: '#ffffff' });
     });
   });
-  return { cGood, cChili, cRelax, cZeros, cLight, cShip };
+  const cPanic = sheet.alloc(200, 200);
+  inCell(sheet, cPanic, (c) => {
+    sticker(c, 0, 0, 0, circlePath(0, 0, 90), { border: 9, fill: '#3fd27a', shadow: 0.6 }, (q) => {
+      const g = q.createRadialGradient(-30, -36, 10, 0, 0, 92);
+      g.addColorStop(0, '#7dffa9');
+      g.addColorStop(1, '#22b85e');
+      fillPath(q, circlePath(0, 0, 90), g);
+      q.strokeStyle = '#0d3b1f';
+      q.lineWidth = 7;
+      q.lineCap = 'round';
+      for (const ex of [-24, 24]) {
+        q.beginPath();
+        q.arc(ex, -2, 12, Math.PI * 1.1, Math.PI * 1.9);
+        q.stroke();
+      }
+      q.beginPath();
+      q.arc(0, 10, 26, 0.2 * Math.PI, 0.8 * Math.PI);
+      q.stroke();
+      arcText(q, "DON'T PANIC", 0, 0, 66, -Math.PI / 2, { size: 24, family: FONTS.archivoBlack, color: '#0d3b1f', tracking: 1.5 });
+      arcText(q, "it's a beta", 0, 0, 66, Math.PI / 2, { size: 18, family: FONTS.spaceMono, weight: 700, color: '#0d3b1f', tracking: 1 }, true);
+    });
+  });
+  return { cGood, cChili, cRelax, cZeros, cLight, cShip, cPanic };
 }
 
 // ------------------------------------------------------------------ build
@@ -231,7 +253,7 @@ function build(bctx: ObjectBuildContext) {
   const cream: THREE.BufferGeometry[] = [];
   cream.push(place(new RoundedBoxGeometry(BASE.w, BASE.h, BASE.d, 4, BASE.r), [0, BASE.h / 2, 0]));
   cream.push(place(new RoundedBoxGeometry(MON.w, MON.h, MON.d, 5, MON.r), [0, MON.cy, MON.cz]));
-  cream.push(place(new RoundedBoxGeometry(24, 20, 12, 5, 5.5), [0, 18.6, -8.5]));
+  cream.push(place(new RoundedBoxGeometry(24, 20, 12, 5, 5.5), [0, MON.cy - 1.3, -8.5]));
   cream.push(place(new THREE.CylinderGeometry(6.5, 7.2, 0.9, 40), [0, BASE.h + 0.4, -1.5]));
   const lip = frameRing(2 * 9.4, 2 * 7.2, 2.6, 0.95, 0.42, 0.12);
   lip.translate(0, SCR.cy, MON_FRONT - 0.05);
@@ -262,9 +284,9 @@ function build(bctx: ObjectBuildContext) {
       [
         mouseBack,
         new THREE.Vector3(mouseBack.x - 0.6, 0.35, mouseBack.z - 1.6),
-        new THREE.Vector3(19.4, 0.5, 11.8),
-        new THREE.Vector3(17.2, 1.6, 10.2),
-        new THREE.Vector3(BASE.w / 2 - 0.2, 2.6, 9.4),
+        new THREE.Vector3(19.6, 0.5, 13.2),
+        new THREE.Vector3(17.4, 1.6, 10.6),
+        new THREE.Vector3(BASE.w / 2 - 0.2, 2.8, 9.6),
       ],
       0.3,
       48,
@@ -289,19 +311,19 @@ function build(bctx: ObjectBuildContext) {
   {
     const slot = new THREE.CapsuleGeometry(0.42, 9.2, 4, 12);
     slot.rotateZ(Math.PI / 2);
-    dark.push(place(slot, [4.6, 4.7, BASE.d / 2], [0, 0, 0], [1, 1, 0.55]));
+    dark.push(place(slot, [4.6, 5.0, BASE.d / 2], [0, 0, 0], [1, 1, 0.55]));
     for (let i = 0; i < 3; i++) {
       const v = new THREE.CapsuleGeometry(0.32, 6, 4, 10);
       v.rotateX(Math.PI / 2);
-      dark.push(place(v, [BASE.w / 2, 2.4 + i * 1.25, 6], [0, 0, 0], [0.55, 1, 1]));
+      dark.push(place(v, [BASE.w / 2, 2.6 + i * 1.35, 6.2], [0, 0, 0], [0.55, 1, 1]));
     }
-    // monitor side vents
+    // monitor side vents on the CRT hump
     for (let i = 0; i < 4; i++) {
-      const v = new THREE.CapsuleGeometry(0.28, 5.2, 4, 10);
-      v.rotateX(Math.PI / 2);
-      dark.push(place(v, [12.0 - 0.2, 25 - i * 1.2, -9.5], [0, 0, 0], [0.55, 1, 1]));
-      const v2 = v.clone();
-      dark.push(place(v2, [-12.0 + 0.2, 25 - i * 1.2, -9.5], [0, 0, 0], [0.55, 1, 1]));
+      for (const side of [-1, 1]) {
+        const v = new THREE.CapsuleGeometry(0.28, 5.2, 4, 10);
+        v.rotateX(Math.PI / 2);
+        dark.push(place(v, [side * 11.8, MON.cy + 5 - i * 1.2, -9.5], [0, 0, 0], [0.55, 1, 1]));
+      }
     }
   }
   {
@@ -321,11 +343,11 @@ function build(bctx: ObjectBuildContext) {
   // ---------- buttons: yellow square, power button with an orange eye, floppy eject, monitor knob, LED
   const btn: THREE.BufferGeometry[] = [];
   const fz = BASE.d / 2;
-  btn.push(tint(place(new RoundedBoxGeometry(2.1, 2.1, 0.9, 3, 0.35), [-12.6, 3.7, fz]), '#ffc21a'));
-  btn.push(tint(place(new THREE.CylinderGeometry(1.05, 1.1, 0.8, 32), [-9.4, 3.7, fz], [Math.PI / 2, 0, 0]), '#f6f1e6'));
-  btn.push(tint(place(new THREE.CylinderGeometry(0.55, 0.55, 0.9, 24), [-9.4, 3.7, fz + 0.06], [Math.PI / 2, 0, 0]), '#ff7a1a'));
-  btn.push(tint(place(new RoundedBoxGeometry(1.5, 0.75, 0.7, 2, 0.25), [8.9, 3.3, fz]), '#d8d0bf'));
-  btn.push(tint(place(new THREE.SphereGeometry(0.28, 12, 8), [-6.9, 3.7, fz + 0.05]), '#46e08c'));
+  btn.push(tint(place(new RoundedBoxGeometry(2.1, 2.1, 0.9, 3, 0.35), [-12.8, 4.1, fz]), '#ffc21a'));
+  btn.push(tint(place(new THREE.CylinderGeometry(1.05, 1.1, 0.8, 32), [-9.7, 4.1, fz], [Math.PI / 2, 0, 0]), '#f6f1e6'));
+  btn.push(tint(place(new THREE.CylinderGeometry(0.55, 0.55, 0.9, 24), [-9.7, 4.1, fz + 0.06], [Math.PI / 2, 0, 0]), '#ff7a1a'));
+  btn.push(tint(place(new RoundedBoxGeometry(1.5, 0.75, 0.7, 2, 0.25), [8.9, 3.5, fz]), '#d8d0bf'));
+  btn.push(tint(place(new THREE.SphereGeometry(0.28, 12, 8), [-7.6, 4.1, fz + 0.05]), '#46e08c'));
   {
     const knob = lathe(
       [
@@ -337,7 +359,7 @@ function build(bctx: ObjectBuildContext) {
       { segments: 32 },
     );
     knob.rotateX(Math.PI / 2);
-    btn.push(tint(place(knob, [10.7, 11.4, MON_FRONT - 0.1]), '#ffb21a'));
+    btn.push(tint(place(knob, [10.7, SCR.cy - 9.1, MON_FRONT - 0.1]), '#ffb21a'));
   }
   const btnGeo = merge(btn);
   btn.forEach((g) => g.dispose());
@@ -403,7 +425,7 @@ function build(bctx: ObjectBuildContext) {
   );
 
   // ---------- stickers
-  const sheet = new StickerSheet(1024, 768, bctx, 14);
+  const sheet = new StickerSheet(1024, 840, bctx, 14);
   const cells = paintStickers(sheet);
   const sheetTex = sheet.surf.colorTexture();
   // monitor's front-top edge: front face -> quarter round (r) -> top; a = x, b = arc length from y = top - r
@@ -422,19 +444,21 @@ function build(bctx: ObjectBuildContext) {
   const baseFront = surfaces.plane(new THREE.Vector3(0, 0, BASE.d / 2 + 0.01), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0));
   const baseRight = surfaces.plane(new THREE.Vector3(BASE.w / 2 + 0.01, 0, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 1, 0));
   const baseTop = surfaces.plane(new THREE.Vector3(0, BASE.h + 0.01, 0), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1));
+  const monLeft = surfaces.plane(new THREE.Vector3(-MON.w / 2 - 0.01, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0));
   const humpBack = surfaces.plane(new THREE.Vector3(0, 0, -14.5 - 0.01), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0));
   const geos = [
     stickerPatch(edge, -1.2, 2.3, 10.4, 4.45, -4 * DEG, cells.cGood.uv, { nx: 12, ny: 10, offset: 0.03 }),
-    stickerPatch(monRight, 0.6, 21, 5.4, 7.4, 6 * DEG, cells.cChili.uv, { nx: 4, ny: 4, offset: 0 }),
-    stickerPatch(baseFront, -2.2, 3.6, 6.6, 4.85, -5 * DEG, cells.cRelax.uv, { nx: 4, ny: 4, offset: 0 }),
-    stickerPatch(baseRight, -3.2, 3.6, 6.2, 2.5, 4 * DEG, cells.cZeros.uv, {
+    stickerPatch(monRight, -1.0, MON.cy + 1.0, 5.5, 7.5, 6 * DEG, cells.cChili.uv, { nx: 4, ny: 4, offset: 0 }),
+    stickerPatch(baseFront, -3.3, 4.0, 5.9, 4.3, -4 * DEG, cells.cRelax.uv, { nx: 4, ny: 4, offset: 0 }),
+    stickerPatch(baseRight, 5.6, 4.2, 6.2, 2.5, 4 * DEG, cells.cZeros.uv, {
       nx: 8,
       ny: 4,
       offset: 0,
       lift: (u, v) => 0.9 * Math.pow(THREE.MathUtils.smoothstep(u + (1 - v) * 0.25, 0.85, 1.25), 2),
     }),
     stickerPatch(baseTop, -9.4, -10.2, 8.4, 3.3, 8 * DEG, cells.cLight.uv, { nx: 4, ny: 4, offset: 0 }),
-    stickerPatch(humpBack, 2.5, 18.5, 5.4, 5.4, -12 * DEG, cells.cShip.uv, { nx: 4, ny: 4, offset: 0 }),
+    stickerPatch(monLeft, 1.0, MON.cy + 3.0, 5.0, 5.0, -10 * DEG, cells.cPanic.uv, { nx: 4, ny: 4, offset: 0 }),
+    stickerPatch(humpBack, 2.5, MON.cy - 1.4, 5.4, 5.4, -12 * DEG, cells.cShip.uv, { nx: 4, ny: 4, offset: 0 }),
   ];
   const stickersGeo = merge(geos);
   geos.forEach((g) => g.dispose());

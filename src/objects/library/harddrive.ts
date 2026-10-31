@@ -31,7 +31,7 @@ const BASE = { y0: -2.75, y1: 5.0, z: -0.75 };
 
 const LIME = '#d7ff3a';
 const INK = '#111214';
-const YELLOW = '#ffd21f';
+const YELLOW = '#ffdf2e';
 const RED = '#e8231a';
 
 // ------------------------------------------------------------------ textures
@@ -339,6 +339,9 @@ function build(bctx: ObjectBuildContext) {
     attenuationDistance: 14,
     emissive: new THREE.Color('#cfdae6'),
     emissiveIntensity: 0.05,
+    sheen: 1,
+    sheenColor: new THREE.Color('#dfe8f2'),
+    sheenRoughness: 0.32,
   });
   inner.add(new THREE.Mesh(caseGeo, caseMat));
 
@@ -384,9 +387,21 @@ function build(bctx: ObjectBuildContext) {
     const y = PCB.y0 + 0.35 + r() * (PCB.y1 - PCB.y0 - 0.7);
     dark.push(tint(place(new THREE.BoxGeometry(0.18, 0.09, 0.07), [x, y, PCB.z + 0.1], [0, 0, r() > 0.5 ? Math.PI / 2 : 0]), r() > 0.6 ? '#c9a54a' : r() > 0.3 ? '#5b4636' : '#9aa0a8'));
   }
+  // copper flex from the arm to the board
+  {
+    const pts = [
+      new THREE.Vector3(PIVOT.x - 0.3, PIVOT.y - 0.3, -0.12),
+      new THREE.Vector3(PIVOT.x - 0.9, PIVOT.y - 0.55, -0.2),
+      new THREE.Vector3(PIVOT.x - 1.3, PIVOT.y - 0.75, -0.3),
+      new THREE.Vector3(PIVOT.x - 1.45, PIVOT.y - 1.15, -0.38),
+      new THREE.Vector3(PIVOT.x - 1.4, PIVOT.y - 1.6, -0.42),
+    ];
+    const side = new THREE.Vector3(0, 0, 0.16);
+    dark.push(tint(ribbon(pts, () => side), '#ff8a3a'));
+  }
   const darkGeo = merge(dark);
   dark.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(darkGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.25, clearcoat: 0.4 })));
+  inner.add(new THREE.Mesh(darkGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.25, clearcoat: 0.4, side: THREE.DoubleSide })));
 
   // ---------- green controller board
   const pcbSurf = new Surface(1024, 400, bctx, { density: 0.7 });
@@ -401,20 +416,6 @@ function build(bctx: ObjectBuildContext) {
   pcbTex.repeat.set(1 / pcbW, 1 / pcbH);
   pcbTex.offset.set(0.5, -PCB.y0 / pcbH);
   inner.add(new THREE.Mesh(pcbGeo, new THREE.MeshStandardMaterial({ map: pcbTex, roughness: 0.5, metalness: 0.1 })));
-
-  // ---------- copper flex from the arm to the board (warm, softly glowing)
-  {
-    const pts = [
-      new THREE.Vector3(PIVOT.x - 0.3, PIVOT.y - 0.3, -0.12),
-      new THREE.Vector3(PIVOT.x - 0.9, PIVOT.y - 0.55, -0.2),
-      new THREE.Vector3(PIVOT.x - 1.3, PIVOT.y - 0.75, -0.3),
-      new THREE.Vector3(PIVOT.x - 1.45, PIVOT.y - 1.15, -0.38),
-      new THREE.Vector3(PIVOT.x - 1.4, PIVOT.y - 1.6, -0.42),
-    ];
-    const side = new THREE.Vector3(0, 0, 0.16);
-    const flex = ribbon(pts, () => side);
-    inner.add(new THREE.Mesh(flex, new THREE.MeshPhysicalMaterial({ color: '#ff9a3c', emissive: '#ff6a10', emissiveIntensity: 0.55, roughness: 0.3, clearcoat: 0.8, side: THREE.DoubleSide })));
-  }
 
   // ---------- chrome: USB-C, case screws on the back corners
   const chr: THREE.BufferGeometry[] = [];
@@ -489,7 +490,7 @@ function build(bctx: ObjectBuildContext) {
   }
   const paperGeo = merge(paper);
   paper.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.6, emissive: '#ffffff', emissiveMap: sheetTex, emissiveIntensity: 0.14 }), '#f1ece0')));
+  inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.6, emissive: '#ffffff', emissiveMap: sheetTex, emissiveIntensity: 0.22 }), '#f1ece0')));
 
   // ---------- idle: platter spins, the arm seeks, the LED blinks on seeks
   const update = (t: number) => {

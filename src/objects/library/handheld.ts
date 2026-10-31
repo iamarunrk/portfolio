@@ -391,7 +391,7 @@ function seamGeometry(): THREE.BufferGeometry {
   roundRect(path, 0, 0, W + 0.012, H + 0.012, CORNERS.map((c) => c + 0.006) as Corners);
   const pts = path.getSpacedPoints(260).map((p) => new THREE.Vector3(p.x, p.y, 0));
   pts.push(pts[0].clone());
-  const half = new THREE.Vector3(0, 0, 0.03);
+  const half = new THREE.Vector3(0, 0, -0.03);
   return ribbon(pts, () => half);
 }
 

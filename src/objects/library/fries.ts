@@ -239,23 +239,23 @@ function paintCarton(s: Surface): void {
 function paintFrySkin(s: Surface): void {
   const c = s.c;
   const r = rng(99);
-  c.fillStyle = '#f2f2f2';
+  c.fillStyle = '#f7f7f7';
   c.fillRect(0, 0, s.w, s.h);
-  for (let i = 0; i < 600; i++) {
-    c.fillStyle = r() > 0.35 ? 'rgba(150,110,60,0.35)' : 'rgba(110,70,30,0.5)';
-    c.fillRect(r() * s.w, r() * s.h, 1 + r() * 3, 2 + r() * 7);
+  // faint lengthwise potato streaks and a few darker specks
+  for (let i = 0; i < 140; i++) {
+    c.fillStyle = r() > 0.25 ? 'rgba(200,170,120,0.22)' : 'rgba(150,100,45,0.3)';
+    c.fillRect(r() * s.w, r() * s.h, 1 + r() * 2, 4 + r() * 16);
   }
-  for (let i = 0; i < 260; i++) {
+  // salt
+  for (let i = 0; i < 160; i++) {
     c.fillStyle = '#ffffff';
-    const x = r() * s.w;
-    const y = r() * s.h;
-    const z = 1.5 + r() * 2.5;
-    c.fillRect(x, y, z, z);
+    const z = 1.2 + r() * 2;
+    c.fillRect(r() * s.w, r() * s.h, z, z);
   }
   s.bumpDraw((b) => {
-    for (let i = 0; i < 500; i++) {
-      b.fillStyle = r() > 0.5 ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.3)';
-      b.fillRect(r() * s.w, r() * s.h, 2 + r() * 3, 3 + r() * 10);
+    for (let i = 0; i < 360; i++) {
+      b.fillStyle = r() > 0.5 ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.22)';
+      b.fillRect(r() * s.w, r() * s.h, 2 + r() * 3, 4 + r() * 14);
     }
   });
 }
@@ -263,7 +263,7 @@ function paintFrySkin(s: Surface): void {
 /** One fry: rounded-square section swept along a gently bent line (length L along +Y), capped ends. */
 function fryGeometry(L: number, w: number): THREE.BufferGeometry {
   const sec: [number, number][] = [];
-  const rc = w * 0.2;
+  const rc = w * 0.3;
   const h = w / 2 - rc;
   const corners: [number, number][] = [
     [h, h],
@@ -283,8 +283,8 @@ function fryGeometry(L: number, w: number): THREE.BufferGeometry {
   const uv: number[] = [];
   const col: number[] = [];
   const idx: number[] = [];
-  const gold = new THREE.Color('#f5c24a');
-  const brown = new THREE.Color('#b9772a');
+  const gold = new THREE.Color('#ffcf4f');
+  const brown = new THREE.Color('#c9832c');
   const tmp = new THREE.Color();
   const center = (t: number) => new THREE.Vector3(0.22 * Math.sin(Math.PI * t) * (L / 10), t * L, 0.08 * Math.sin(2 * Math.PI * t));
   for (let j = 0; j <= nLen; j++) {
@@ -453,29 +453,43 @@ function build(bctx: ObjectBuildContext) {
   const cols: THREE.Color[] = [];
   const Y = new THREE.Vector3(0, 1, 0);
   const placed: THREE.Vector2[] = [];
-  for (let tries = 0; tries < 900 && mats.length < 54; tries++) {
-    const bx = (rand() * 2 - 1) * (A1 - 0.75);
-    const bz = (rand() * 2 - 1) * (B1 - 0.62);
-    if (placed.some((p) => Math.hypot(p.x - bx, p.y - bz) < 0.62)) continue;
+  // a fry may lean, but must stay inside the carton until it clears the rim
+  const insideUntilRim = (p0: THREE.Vector3, dir: THREE.Vector3, len: number) => {
+    const m = 0.5;
+    for (let t = 0; t <= len; t += 0.4) {
+      const p = p0.clone().addScaledVector(dir, t);
+      if (p.y > H + 0.2) return true;
+      const f = THREE.MathUtils.clamp(p.y / H, 0, 1);
+      const a = A0 + (A1 - A0) * f - m;
+      const b = B0 + (B1 - B0) * f - m;
+      if (Math.pow(Math.abs(p.x) / a, 4) + Math.pow(Math.abs(p.z) / b, 4) > 1) return false;
+    }
+    return true;
+  };
+  for (let tries = 0; tries < 2400 && mats.length < 50; tries++) {
+    const bx = (rand() * 2 - 1) * (A0 + 0.4);
+    const bz = (rand() * 2 - 1) * (B0 + 0.1);
+    if (placed.some((p) => Math.hypot(p.x - bx, p.y - bz) < 0.66)) continue;
+    const back = 0.5 - bz / (2 * B1); // 0 front .. 1 back
+    const y0 = 2.0 + rand() * 1.4;
+    const dir = new THREE.Vector3(0.3 * (bx / A1) + (rand() - 0.5) * 0.16, 1, 0.26 * (bz / B1) + (rand() - 0.5) * 0.14).normalize();
+    const len = 0.78 + rand() * 0.2 + back * 0.16;
+    const p0 = new THREE.Vector3(bx, y0, bz);
+    if (!insideUntilRim(p0, dir, 10 * len)) continue;
     placed.push(new THREE.Vector2(bx, bz));
-    const back = (0.5 - bz / (2 * B1)) * 1.0; // 0 front .. 1 back
-    const splay = 0.34;
-    const dir = new THREE.Vector3(splay * (bx / A1) + (rand() - 0.5) * 0.22, 1, splay * 0.8 * (bz / B1) + (rand() - 0.5) * 0.2 + (back < 0.25 ? 0.12 : 0)).normalize();
-    const len = 0.86 + rand() * 0.3 + back * 0.22;
-    const y0 = 2.2 + rand() * 1.2;
     const q = new THREE.Quaternion().setFromUnitVectors(Y, dir).multiply(new THREE.Quaternion().setFromAxisAngle(Y, rand() * Math.PI * 2));
-    mats.push(new THREE.Matrix4().compose(new THREE.Vector3(bx * 0.82, y0, bz * 0.8), q, new THREE.Vector3(1, len, 1)));
-    cols.push(new THREE.Color().setHSL(0.11 + (rand() - 0.5) * 0.02, 0.85, 0.9 + (rand() - 0.5) * 0.12));
+    mats.push(new THREE.Matrix4().compose(p0, q, new THREE.Vector3(1, len, 1)));
+    cols.push(new THREE.Color().setHSL(0.12 + (rand() - 0.5) * 0.025, 0.55, 0.93 + (rand() - 0.5) * 0.1));
   }
   // a couple of strays leaning over the front edge
   for (const [x, ang, len] of [
-    [-1.7, 0.6, 0.78],
-    [2.0, 0.5, 0.72],
+    [-1.7, 0.58, 0.7],
+    [2.0, 0.48, 0.66],
   ] as [number, number, number][]) {
     const dir = new THREE.Vector3(x > 0 ? 0.25 : -0.2, Math.cos(ang), Math.sin(ang)).normalize();
     const q = new THREE.Quaternion().setFromUnitVectors(Y, dir);
     mats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, 5.5, -0.2), q, new THREE.Vector3(1, len, 1)));
-    cols.push(new THREE.Color().setHSL(0.105, 0.85, 0.86));
+    cols.push(new THREE.Color().setHSL(0.11, 0.6, 0.9));
   }
   const fryMat = new THREE.MeshPhysicalMaterial({
     map: skin.colorTexture(),

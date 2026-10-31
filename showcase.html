@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en" data-theme="pastel">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ead7f0" />
+    <meta name="description" content="The shelf: sticker-bombed 3D collectibles modelled in code, waiting for their turn on the Once upon a time canvas." />
+    <title>The shelf · Once upon a time</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b0b0d'/%3E%3Cellipse cx='32' cy='32' rx='15' ry='19' fill='none' stroke='%23d7ff3a' stroke-width='9'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bagel+Fat+One&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Permanent+Marker&family=Rubik+Mono+One&family=Shrikhand&family=Space+Mono:wght@400;700&display=swap"
+    />
+  </head>
+  <body>
+    <div class="bg" aria-hidden="true"></div>
+    <canvas id="gl" aria-hidden="true"></canvas>
+
+    <header class="top">
+      <a class="brand" href="./index.html"><span class="brand-serif">Once upon a time</span><span class="brand-sep">/</span><span class="brand-page">shelf</span></a>
+      <div class="theme" role="radiogroup" aria-label="Background">
+        <button type="button" role="radio" data-theme-option="pastel" aria-checked="true">Pastel</button>
+        <button type="button" role="radio" data-theme-option="studio" aria-checked="false">Studio</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <p class="tape"><span class="tape-tag">shelf</span><span>not on the canvas yet</span></p>
+        <h1 class="title">
+          <span class="title-l1">and then there were</span>
+          <span class="title-pill"><span id="count">18</span> more toys</span>
+        </h1>
+        <p class="lede">
+          Sticker-bombed collectibles, modelled entirely in code and waiting for their turn on the canvas. Drag one to spin it,
+          click to take a closer look.
+        </p>
+        <nav class="filters" aria-label="Filter by category" id="filters"></nav>
+      </section>
+
+      <section class="grid" id="grid" aria-label="Collectibles"></section>
+    </main>
+
+    <footer class="foot">
+      <p>
+        Every toy here is procedural: three.js geometry and canvas-painted stickers, no model files. They live in
+        <code>src/objects/library/</code> and can be promoted to the homepage canvas whenever you like.
+      </p>
+      <a href="./index.html">← back to the canvas</a>
+    </footer>
+
+    <div class="inspect" id="inspect" role="dialog" aria-modal="true" aria-labelledby="insp-name" hidden>
+      <div class="inspect-backdrop"></div>
+      <div class="inspect-stage" id="insp-stage" aria-label="Drag to spin, scroll or pinch to zoom"></div>
+      <aside class="inspect-info">
+        <p class="insp-no" id="insp-no"></p>
+        <h2 class="insp-name" id="insp-name"></h2>
+        <p class="insp-tagline" id="insp-tagline"></p>
+        <p class="insp-chip" id="insp-chip"></p>
+        <dl class="insp-facts" id="insp-facts"></dl>
+        <p class="insp-hint">drag to spin · scroll to zoom · double-click to reset · ← → to browse</p>
+      </aside>
+      <div class="inspect-nav">
+        <button type="button" class="round" id="insp-prev" aria-label="Previous toy">←</button>
+        <button type="button" class="round" id="insp-next" aria-label="Next toy">→</button>
+      </div>
+      <button type="button" class="round inspect-close" id="insp-close" aria-label="Close">✕</button>
+    </div>
+
+    <script type="module" src="/src/showcase/main.ts"></script>
+  </body>
+</html>

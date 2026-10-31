@@ -57,9 +57,10 @@ The island, top bar, hint, show-UI button and selection pill are iOS-style Liqui
 
 ```bash
 npm install
-npm run dev            # http://localhost:5173
-npm run build          # static site in dist/ (relative paths: deploy anywhere)
-npm run build:preview  # one self-contained HTML file in dist-preview/
+npm run dev             # http://localhost:5173 (the shelf: /showcase.html)
+npm run build           # static site in dist/ (relative paths: deploy anywhere)
+npm run build:preview   # one self-contained HTML file in dist-preview/
+npm run build:showcase  # the shelf page as one self-contained HTML file in dist-showcase/
 ```
 
 ## Project map
@@ -79,6 +80,8 @@ src/
   overlay/GizmoOverlay.tsx  SVG rings, wedge, knob, selection pill, frame box
   hero/TitleFrame.tsx     the headline frame
   objects/                the 3D collectibles (one file each) + sticker painting helpers
+    library/              the shelf: more collectibles, built but not on the canvas yet
+  showcase/               the shelf page (showcase.html at the repo root)
   bg/                     background engine, GLSL, presets and metadata
   ui/                     bottom island, top bar, hint, Liquid Glass registry
 ```
@@ -92,6 +95,8 @@ Run `npm run dev`, then open:
 | `/dev/objects.html` | the five toys side by side under studio light | `?only=can`, `?bg=light`, `?rot=y`, `?yaw=30&pitch=10` |
 | `/dev/bg.html` | the background engine on its own | `?base=mesh&mat=fluted`, `?preset=<id>`, `?grid=bases`, `?grid=materials` |
 | `/dev/ui.html` | island, top bar and hint over a live background | `?fresh` (first visit), `?nogl` |
+| `/dev/library.html` | the shelf toys under studio light (QA harness) | `?only=cassette`, `?only=cassette&views=1` (8 angles), `&with=can`, `?bg=pastel`, `?hud=1` |
+| `/showcase.html` | the shelf page itself | `?theme=studio`, `?all=1` (build every card now), `#cassette` (close-up) |
 
 ## Adding a new toy
 

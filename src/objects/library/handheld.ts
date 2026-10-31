@@ -5,7 +5,7 @@ import { Surface, StickerSheet, canvasTexture } from '../textures';
 import { Trash, finish } from '../build';
 import { lathe, merge, place, ribbon, stickerPatch, surfaces, tint } from '../geometry';
 import { chrome, glossyPlastic, holoFoil, paperBackfaces, stickerSheet } from '../materials';
-import { FONTS, DEG, rng, text, sticker, rrPath, rrect, starPath, holoFill, fillPath, smallPrint, barcode, grain } from '../paint';
+import { FONTS, DEG, rng, text, sticker, rrPath, rrect, starPath, holoFill, fillPath, smallPrint, barcode, grain, type C2D } from '../paint';
 import { decalPlane, frostedPlastic, inCell, peelLift, roundRect, roundRectShape, screwHead, smoothSlab, type Corners } from './_translucent';
 
 /*
@@ -278,8 +278,8 @@ function paintPrint(s: Surface): void {
   smallPrint(c, ['◀ PHONES'], hx, hy, 15, 'rgba(40,44,52,0.6)', { weight: 700 });
 }
 
-function paintButtons(s: Surface): void {
-  const c = s.c;
+/** S / D button tops, 512 x 256 design units with the origin at the top-left of the cell. */
+function paintButtons(c: C2D): void {
   for (const [i, ch] of [
     [0, 'S'],
     [1, 'D'],
@@ -378,6 +378,14 @@ function paintStickers(sheet: StickerSheet) {
       text(q, 'NO', -150, 172, { size: 30, family: FONTS.archivoBlack, align: 'center', color: INK });
     });
   });
+  const btn = sheet.alloc(512, 256);
+  {
+    const c = sheet.surf.c;
+    c.save();
+    c.translate(btn.x, btn.y);
+    paintButtons(c);
+    c.restore();
+  }
   const star = sheet.alloc(300, 300);
   inCell(sheet, star, (c) => {
     const path = starPath(0, 0, 136, 88, 7, -Math.PI / 2, 0.5);
@@ -387,7 +395,7 @@ function paintStickers(sheet: StickerSheet) {
       text(q, '0', 0, 70, { size: 84, family: FONTS.bagel, align: 'center', color: '#ffffff', outlines: [{ color: '#2a1a5e', width: 12 }] });
     });
   });
-  return { ship, z, back, star };
+  return { ship, z, back, star, btn };
 }
 
 // ------------------------------------------------------------------ geometry
@@ -507,7 +515,9 @@ function dpad(): THREE.BufferGeometry {
   return out;
 }
 
-function button(u0: number): THREE.BufferGeometry {
+function button(u0: number, rect: [number, number, number, number]): THREE.BufferGeometry {
+  const U = (u: number) => rect[0] + u * (rect[2] - rect[0]);
+  const V = (v: number) => rect[1] + v * (rect[3] - rect[1]);
   const R = BTN_R;
   const g = lathe(
     [
@@ -519,7 +529,14 @@ function button(u0: number): THREE.BufferGeometry {
       [R * 0.45, 0.41],
       [0, 0.42],
     ],
-    { segments: 40, uv: (x, _y, z) => [u0 + (x / (2 * R) + 0.5) * 0.5, 0.5 - z / (2 * R)] },
+    {
+      segments: 40,
+      // inset a little so mip levels never pull in the transparent padding around the cell
+      uv: (x, _y, z) => {
+        const k = (t: number) => 0.04 + 0.92 * THREE.MathUtils.clamp(t, 0, 1);
+        return [U(u0 + k(x / (2 * R) + 0.5) * 0.5), V(k(0.5 - z / (2 * R)))];
+      },
+    },
   );
   g.rotateX(Math.PI / 2);
   return g;
@@ -646,15 +663,18 @@ function build(bctx: ObjectBuildContext) {
   darkParts.forEach((g) => g.dispose());
   inner.add(new THREE.Mesh(darkGeo, glossyPlastic('#ffffff', { vertexColors: true, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.08 })));
 
+  // ---------- sticker sheet (also carries the S / D button art)
+  const sheet = new StickerSheet(1024, 1024, bctx, 14);
+  const cells = paintStickers(sheet);
+  const sheetTex = sheet.surf.colorTexture();
+
   // ---------- S / D buttons
-  const btnSurf = new Surface(512, 256, bctx, { density: 0.8 });
-  paintButtons(btnSurf);
-  const bs = place(button(0), [BTN_S.x, BTN_S.y, front + 0.02]);
-  const bd = place(button(0.5), [BTN_D.x, BTN_D.y, front + 0.02]);
+  const bs = place(button(0, cells.btn.uv), [BTN_S.x, BTN_S.y, front + 0.02]);
+  const bd = place(button(0.5, cells.btn.uv), [BTN_D.x, BTN_D.y, front + 0.02]);
   const btnGeo = merge([bs, bd]);
   bs.dispose();
   bd.dispose();
-  inner.add(new THREE.Mesh(btnGeo, new THREE.MeshPhysicalMaterial({ map: btnSurf.colorTexture(), roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.08 })));
+  inner.add(new THREE.Mesh(btnGeo, new THREE.MeshPhysicalMaterial({ map: sheetTex, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.08 })));
 
   // ---------- chrome: back screws, port rims
   const chr: THREE.BufferGeometry[] = [];
@@ -724,9 +744,6 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(gutsGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.15, clearcoat: 0.3, side: THREE.DoubleSide })));
 
   // ---------- stickers
-  const sheet = new StickerSheet(1024, 1024, bctx, 14);
-  const cells = paintStickers(sheet);
-  const sheetTex = sheet.surf.colorTexture();
   const frontFace = surfaces.plane(new THREE.Vector3(0, 0, front + 0.01), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0));
   const glassFace = surfaces.plane(new THREE.Vector3(0, 0, front + PANEL.t + 0.012), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0));
   const backFace = surfaces.plane(new THREE.Vector3(0, 0, -front - 0.012), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0));

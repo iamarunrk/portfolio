@@ -173,15 +173,6 @@ export function screwHead(r: number, metal = '#e8ebef', slot = '#2b2d31'): THREE
   return g;
 }
 
-/** Orient a +Z-facing geometry so it faces `normal`, then move it to `pos`. */
-export function orient(g: THREE.BufferGeometry, pos: THREE.Vector3, normal: THREE.Vector3, spin = 0): THREE.BufferGeometry {
-  if (spin) g.rotateZ(spin);
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(normal.x, normal.y, normal.z).normalize());
-  g.applyQuaternion(q);
-  g.translate(pos.x, pos.y, pos.z);
-  return g;
-}
-
 /** Draw inside a sticker-sheet cell with the origin at the cell centre. */
 export function inCell(sheet: StickerSheet, cell: AtlasCell, fn: (c: C2D) => void): void {
   const c = sheet.surf.c;

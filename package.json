@@ -1,0 +1,30 @@
+{
+  "name": "once-upon-a-time",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "An editable, toy-like portfolio canvas: floating 3D objects + a remixable shader background.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:preview": "vite build --mode singlefile",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "three": "0.187.0",
+    "zustand": "5.0.16"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/three": "0.187.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vite-plugin-singlefile": "2.3.4"
+  }
+}

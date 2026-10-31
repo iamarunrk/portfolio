@@ -1,0 +1,161 @@
+.hero {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 10;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  /* titleLive positions the centre at (x, y): translate(-50%,-50%) + scale around the centre */
+  transform-origin: 50% 50%;
+  will-change: transform;
+  --ink: #fbfaf7;
+  --ink-soft: rgba(251, 250, 247, 0.72);
+  --pd-bg: #d7ff3a;
+  --pd-ink: #0b0b0d;
+  --shadow: 0 2px 30px rgba(0, 0, 0, 0.28);
+}
+.hero[data-ink='dark'] {
+  --ink: #0d0d10;
+  --ink-soft: rgba(13, 13, 16, 0.7);
+  --shadow: 0 2px 30px rgba(255, 255, 255, 0.22);
+}
+
+.hero-box {
+  position: relative;
+  opacity: 0;
+  translate: 0 0.12em;
+  transition:
+    opacity 0.7s ease,
+    translate 0.9s cubic-bezier(0.2, 0.9, 0.2, 1);
+  padding: 0.18em 0.32em 0.42em;
+  font-size: clamp(46px, 7.4vw, 146px);
+  width: max-content;
+  max-width: 94vw;
+  transform-origin: center;
+}
+
+.hero.is-ready .hero-box {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.hero-title {
+  margin: 0;
+  color: var(--ink);
+  font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1em;
+  line-height: 0.92;
+  letter-spacing: -0.025em;
+  text-align: center;
+  text-shadow: var(--shadow);
+  transition: color 0.35s ease;
+}
+
+.hero-l1,
+.hero-l2 {
+  display: block;
+}
+.hero-l1 {
+  white-space: nowrap;
+}
+
+.hero-l2 {
+  margin-top: 0.06em;
+}
+
+.hero-iwas {
+  white-space: nowrap;
+}
+
+.hero-pd {
+  position: relative;
+  z-index: 0;
+  display: inline-block;
+  margin-left: 0.08em;
+  font-family: 'Bagel Fat One', 'Arial Black', system-ui, sans-serif;
+  font-style: normal;
+  font-size: 0.66em;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--pd-ink);
+  text-shadow: none;
+  white-space: nowrap;
+  vertical-align: 0.06em;
+  padding: 0.02em 0.18em 0.06em;
+  transform: rotate(-2deg);
+}
+/* highlighter swipe behind "product designer" */
+.hero-pd::before {
+  content: '';
+  position: absolute;
+  inset: 0.08em -0.04em 0.02em -0.02em;
+  z-index: -1;
+  background: var(--pd-bg);
+  border-radius: 0.14em 0.3em 0.12em 0.26em;
+  transform: skewX(-8deg);
+  box-shadow:
+    0.06em 0.08em 0 rgba(0, 0, 0, 0.9),
+    0 0.3em 1em rgba(0, 0, 0, 0.25);
+}
+
+/* label-maker tape: "now founder of Zeros" */
+.hero-sticker {
+  position: absolute;
+  right: 0.4em;
+  bottom: -0.02em;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  padding: 0.6em 0.95em 0.6em 0.6em;
+  font: 600 clamp(11px, 0.115em, 17px) / 1 'Geist Mono', ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #f6f6f2;
+  background: #111113;
+  border-radius: 4px;
+  transform: rotate(-4deg);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.9);
+}
+.hero-sticker b {
+  font-weight: 700;
+  color: #d7ff3a;
+}
+.hero-sticker-now {
+  padding: 0.35em 0.5em;
+  border-radius: 3px;
+  background: #ff4fd8;
+  color: #111;
+  text-shadow: none;
+}
+
+@media (max-width: 640px) {
+  .hero-box {
+    font-size: clamp(40px, 13.4vw, 72px);
+    padding: 0.2em 0.25em 0.75em;
+  }
+  .hero-l2 {
+    margin-top: 0.1em;
+  }
+  .hero-iwas {
+    display: block;
+  }
+  .hero-pd {
+    font-size: 0.6em;
+    margin-top: 0.08em;
+    margin-left: 0;
+  }
+  .hero-sticker {
+    right: 50%;
+    transform: translateX(50%) rotate(-3deg);
+    bottom: 0.02em;
+    font-size: 11px;
+  }
+}

@@ -579,16 +579,18 @@ export function holoFill(ctx: C2D, path: PathFn, x: number, y: number, w: number
   ctx.restore();
 }
 
-/** Smiley face. */
+/** Smiley face. Pass face = 'none' for just the eyes and smile. */
 export function smiley(ctx: C2D, cx: number, cy: number, r: number, face = '#ffd400', ink = '#141414', outline = 0): void {
   ctx.save();
   if (outline > 0) {
     fillPath(ctx, circlePath(cx, cy, r + outline), ink);
   }
-  const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r);
-  g.addColorStop(0, lighten(face, 0.35));
-  g.addColorStop(1, face);
-  fillPath(ctx, circlePath(cx, cy, r), g);
+  if (face !== 'none') {
+    const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r);
+    g.addColorStop(0, lighten(face, 0.35));
+    g.addColorStop(1, face);
+    fillPath(ctx, circlePath(cx, cy, r), g);
+  }
   ctx.fillStyle = ink;
   ctx.beginPath();
   ctx.ellipse(cx - r * 0.33, cy - r * 0.22, r * 0.1, r * 0.17, 0, 0, Math.PI * 2);

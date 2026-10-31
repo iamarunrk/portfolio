@@ -81,6 +81,11 @@ export interface MaterialLayer {
   tintAmount: number;
   /** Animation speed for animated materials (water, liquid glass...). */
   speed: number;
+  /**
+   * Optional kind-specific 0..1 shape knob (tile roundness, liquid-glass merge, flute profile,
+   * LED cell roundness, halftone dot shape). See MATERIAL_META labels. Defaults to 0.5 when omitted.
+   */
+  shape?: number;
 }
 
 export interface Effects {
@@ -119,7 +124,7 @@ export interface BaseMeta {
 
 export interface MaterialMeta {
   label: string;
-  params: ParamSpec<'strength' | 'size' | 'blur' | 'angle' | 'highlight' | 'aberration' | 'tintAmount' | 'speed'>[];
+  params: ParamSpec<'strength' | 'size' | 'blur' | 'angle' | 'highlight' | 'aberration' | 'tintAmount' | 'speed' | 'shape'>[];
   /** True if the tint colour matters for this kind. */
   usesTint?: boolean;
   animated?: boolean;

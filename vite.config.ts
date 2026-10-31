@@ -15,5 +15,7 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 2000,
     },
     server: { host: true },
+    // Dev harness pages import the same deps; scan them up front so Vite never re-optimises mid-session.
+    optimizeDeps: { entries: ['index.html', 'dev/*.html'] },
   };
 });

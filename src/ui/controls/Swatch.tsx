@@ -102,9 +102,7 @@ export function Rail({ items, activeId, onSelect, label, debounce }: RailProps) 
     const act = el.querySelector<HTMLElement>('[aria-checked="true"]');
     if (act) el.scrollLeft = act.offsetLeft - (el.clientWidth - act.offsetWidth) / 2;
     updateEdges();
-    // mount only
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [updateEdges]);
 
   useEffect(() => {
     const el = ref.current;

@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
     <meta name="theme-color" content="#0b0b0d" />
     <title>UI chrome · dev harness</title>
+    <script>
+      // ?fresh = first visit: must run before the store module reads storage.
+      if (/[?&]fresh\b/.test(location.search)) {
+        try {
+          localStorage.removeItem('once-upon-a-time:v1');
+          localStorage.removeItem('once-upon-a-time:hint');
+        } catch (e) {}
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

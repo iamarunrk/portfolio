@@ -75,7 +75,7 @@ export function TopBar() {
           <span className="ui-badge__in">
             <span className="ui-badge__pill">
               <span className="ui-badge__dot" aria-hidden="true" />
-              Edited
+              <span className="ui-badge__text">Edited</span>
             </span>
           </span>
         </span>
@@ -126,6 +126,7 @@ export function TopBar() {
         inert={!hidden}
         aria-hidden={!hidden || undefined}
         onClick={show}
+        onKeyDown={keepKeys}
         aria-label="Show UI"
         title={`Show UI (${HIDE_SHORTCUT})`}
       >

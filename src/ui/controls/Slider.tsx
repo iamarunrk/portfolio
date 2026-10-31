@@ -168,7 +168,6 @@ export function Slider({ label, value, min, max, step, onChange, format, default
       onDoubleClick={onDoubleClick}
     >
       <span className="ui-slider__fill" aria-hidden="true" />
-      <span className="ui-slider__handle" aria-hidden="true" />
       <span className="ui-slider__label">
         {label}
         {note ? <em className="ui-slider__note"> · {note}</em> : null}

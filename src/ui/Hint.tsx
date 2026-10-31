@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { IconClose, IconSparkle } from './icons';
+import { keepKeys } from './keys';
 import './ui.css';
 
 const HINT_KEY = 'once-upon-a-time:hint';
@@ -50,11 +51,12 @@ export function Hint() {
     return () => clearTimeout(t);
   }, [phase]);
 
+  // Countdown pauses while hovered or while the chrome is hidden (nobody can read it then).
   useEffect(() => {
-    if (phase !== 'open' || hovered) return;
+    if (phase !== 'open' || hovered || hidden) return;
     const t = setTimeout(dismiss, wasHovered ? AFTER_HOVER : LIFETIME);
     return () => clearTimeout(t);
-  }, [phase, hovered, wasHovered, dismiss]);
+  }, [phase, hovered, hidden, wasHovered, dismiss]);
 
   useEffect(() => {
     if (phase !== 'closing') return;
@@ -86,6 +88,7 @@ export function Hint() {
             setWasHovered(true);
           }}
           onPointerLeave={() => setHovered(false)}
+          onKeyDown={keepKeys}
         >
           <IconSparkle className="ui-hint__spark" size={18} />
           <p className="ui-hint__text" aria-hidden="true">

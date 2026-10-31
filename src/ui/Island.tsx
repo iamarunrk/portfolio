@@ -71,11 +71,13 @@ function tabForKind(kind: BaseLayer['kind']): IslandTab {
   return 'shaders';
 }
 
-const GLASS_PRESETS: MaterialPreset[] = MATERIAL_PRESETS.some((p) => p.material.kind === 'none')
+const MATERIALS_WITH_NONE: MaterialPreset[] = MATERIAL_PRESETS.some((p) => p.material.kind === 'none')
   ? MATERIAL_PRESETS
   : [{ id: 'none', name: 'None', material: NO_GLASS }, ...MATERIAL_PRESETS];
 
 const near = (a: number, b: number) => Math.abs((a ?? 0) - (b ?? 0)) < 1e-3;
+/** MaterialLayer.shape is optional; the engine treats a missing value as 0.5. */
+const SHAPE_DEFAULT = 0.5;
 
 /** Same look (speed ignored: Effects can change it without leaving the preset). */
 function sameBase(a: BaseLayer, b: BaseLayer): boolean {
@@ -96,9 +98,29 @@ function sameMaterial(a: MaterialLayer, b: MaterialLayer): boolean {
     near(a.highlight, b.highlight) &&
     near(a.aberration, b.aberration) &&
     near(a.tintAmount, b.tintAmount) &&
+    near(a.shape ?? SHAPE_DEFAULT, b.shape ?? SHAPE_DEFAULT) &&
     sameColor(a.tint, b.tint)
   );
 }
+
+/**
+ * The first-impression look (DEFAULT_BG) is hand-tuned and not one of the presets.
+ * Offer it as an "Original" swatch so visitors can get back to it without a full Reset.
+ */
+const ORIGINAL_ID = '__original';
+const ORIGINAL_BASE: BasePreset = { id: ORIGINAL_ID, name: 'Original', base: DEFAULT_BG.base };
+const ORIGINAL_GLASS: MaterialPreset = { id: ORIGINAL_ID, name: 'Original', material: DEFAULT_BG.material };
+
+function withOriginalBase(presets: BasePreset[], tab: IslandTab): BasePreset[] {
+  if (tabForKind(DEFAULT_BG.base.kind) !== tab || presets.some((p) => sameBase(p.base, DEFAULT_BG.base))) return presets;
+  return [ORIGINAL_BASE, ...presets];
+}
+
+const SHADER_RAIL = withOriginalBase(SHADER_PRESETS, 'shaders');
+const GRADIENT_RAIL = withOriginalBase(GRADIENT_PRESETS, 'gradients');
+const GLASS_PRESETS: MaterialPreset[] = MATERIALS_WITH_NONE.some((p) => sameMaterial(p.material, DEFAULT_BG.material))
+  ? MATERIALS_WITH_NONE
+  : [ORIGINAL_GLASS, ...MATERIALS_WITH_NONE];
 
 /** Exact match first; otherwise the last clicked preset while it's still the same kind. */
 function activeBasePreset(presets: BasePreset[], base: BaseLayer, lastId: string | null): BasePreset | undefined {
@@ -157,6 +179,16 @@ function Section({ title, aside, children }: { title: string; aside?: ReactNode;
   );
 }
 
+/** Balanced columns: 4 controls read as 2x2, 5-6 as 3 per row; phones get at most 2. */
+function Grid({ count, children }: { count: number; children: ReactNode }) {
+  const cols = count <= 3 ? Math.max(1, count) : count === 4 ? 2 : 3;
+  return (
+    <div className="ui-grid" style={{ '--cols': cols, '--cols-sm': Math.min(cols, 2) } as CSSProperties}>
+      {children}
+    </div>
+  );
+}
+
 function Note({ children }: { children: ReactNode }) {
   return (
     <p className="ui-note">
@@ -196,7 +228,7 @@ function Palette({ base, meta }: { base: BaseLayer; meta: BaseMeta }) {
 function BaseSliders({ base, meta, defaults }: { base: BaseLayer; meta: BaseMeta; defaults: BaseLayer }) {
   const patchBase = useStore((s) => s.patchBase);
   return (
-    <div className="ui-grid">
+    <Grid count={meta.params.length}>
       {meta.params.map((p) => (
         <Slider
           key={p.key}
@@ -210,7 +242,7 @@ function BaseSliders({ base, meta, defaults }: { base: BaseLayer; meta: BaseMeta
           onChange={(v) => patchBase({ [p.key]: v } as Partial<BaseLayer>)}
         />
       ))}
-    </div>
+    </Grid>
   );
 }
 
@@ -246,7 +278,7 @@ function BasePanel({ tab, presets, pick }: { tab: 'shaders' | 'gradients'; prese
 
   return (
     <>
-      <Section title={tab === 'shaders' ? 'Shaders' : 'Gradients'} aside={owns && meta ? meta.label : `${presets.length} looks`}>
+      <Section title="Presets" aside={owns && meta ? `now: ${meta.label}` : `${presets.length} looks`}>
         <Rail items={items} activeId={active?.id ?? null} onSelect={onSelect} label={tab === 'shaders' ? 'Shader presets' : 'Gradient presets'} />
       </Section>
       {owns && meta ? (
@@ -389,12 +421,12 @@ function GlassPanel({ pick }: { pick: PickState }) {
 
   return (
     <>
-      <Section title="Glass" aside={`over ${BASE_META[base.kind]?.label ?? base.kind}`}>
+      <Section title="Presets" aside={`over ${BASE_META[base.kind]?.label ?? base.kind}`}>
         <Rail items={items} activeId={active?.id ?? null} onSelect={onSelect} label="Glass presets" debounce={250} />
       </Section>
       {hasControls ? (
         <Section title="Adjust" aside={meta.label}>
-          <div className="ui-grid">
+          <Grid count={meta.params.length + (meta.usesTint ? 1 : 0)}>
             {meta.params.map((p) => (
               <Slider
                 key={p.key}
@@ -402,16 +434,16 @@ function GlassPanel({ pick }: { pick: PickState }) {
                 min={p.min}
                 max={p.max}
                 step={p.step}
-                value={material[p.key]}
-                defaultValue={defaults[p.key]}
+                value={material[p.key] ?? SHAPE_DEFAULT}
+                defaultValue={defaults[p.key] ?? SHAPE_DEFAULT}
                 format={formatFor(p)}
                 onChange={(v) => patchMaterial({ [p.key]: v } as Partial<MaterialLayer>)}
               />
             ))}
             {meta.usesTint ? (
-              <ColorChip caption="Tint" value={material.tint} label="Glass tint" onChange={(hex) => patchMaterial({ tint: hex })} />
+              <ColorChip caption="Tint colour" value={material.tint} label="Glass tint colour" onChange={(hex) => patchMaterial({ tint: hex })} />
             ) : null}
-          </div>
+          </Grid>
         </Section>
       ) : (
         <Section title="Adjust">
@@ -431,8 +463,8 @@ function EffectsPanel() {
   const speedSpec = meta?.params.find((p) => p.key === 'speed');
   const animated = meta?.animated ?? false;
   return (
-    <Section title="Effects" aside="finishing touches">
-      <div className="ui-grid">
+    <Section title="Finish" aside="grain · vignette · motion">
+      <Grid count={3}>
         <Slider label="Grain" value={fx.grain} min={0} max={1} step={0.01} format={pct} defaultValue={DEFAULT_BG.fx.grain} onChange={(v) => patchFx({ grain: v })} />
         <Slider
           label="Vignette"
@@ -445,7 +477,7 @@ function EffectsPanel() {
           onChange={(v) => patchFx({ vignette: v })}
         />
         <Slider
-          label="Speed"
+          label={speedSpec?.label ?? 'Speed'}
           value={base.speed}
           min={speedSpec?.min ?? 0}
           max={speedSpec?.max ?? 2}
@@ -456,7 +488,7 @@ function EffectsPanel() {
           note={animated ? undefined : 'static'}
           onChange={(v) => patchBase({ speed: v })}
         />
-      </div>
+      </Grid>
     </Section>
   );
 }
@@ -464,9 +496,9 @@ function EffectsPanel() {
 function PanelBody({ tab, pick }: { tab: IslandTab; pick: PickState }) {
   switch (tab) {
     case 'shaders':
-      return <BasePanel tab="shaders" presets={SHADER_PRESETS} pick={pick} />;
+      return <BasePanel tab="shaders" presets={SHADER_RAIL} pick={pick} />;
     case 'gradients':
-      return <BasePanel tab="gradients" presets={GRADIENT_PRESETS} pick={pick} />;
+      return <BasePanel tab="gradients" presets={GRADIENT_RAIL} pick={pick} />;
     case 'colors':
       return <ColorsPanel />;
     case 'glass':
@@ -641,6 +673,38 @@ export function Island() {
       inert={hidden}
       onKeyDown={keepKeys}
     >
+      {/*
+        DOM order = keyboard order: swatch, tabs, panel, dice (Tab goes from the
+        tabs into the open panel). CSS grid lifts the panel into the top row.
+      */}
+      <CurrentSwatch onOpen={(t) => setTab(t)} />
+      <span className="ui-sep ui-sep--a" aria-hidden="true" />
+      <div className="ui-tabs" role="tablist" aria-label="Remix the background" onKeyDown={onTabsKey}>
+        {TABS.map(({ id, label, Icon }) => {
+          const selected = tab === id;
+          return (
+            <button
+              key={id}
+              ref={(el) => {
+                tabRefs.current[id] = el;
+              }}
+              type="button"
+              role="tab"
+              id={tabId(id)}
+              aria-selected={selected}
+              aria-controls={PANEL_ID}
+              tabIndex={(tab ?? roving) === id ? 0 : -1}
+              className="ui-tab"
+              onClick={() => toggle(id)}
+              onFocus={() => setRoving(id)}
+            >
+              <Icon className="ui-tab__icon" size={17} />
+              <span className="ui-tab__label">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="ui-panel" style={{ height: tab ? innerH : 0 }} inert={!tab} aria-hidden={tab ? undefined : true}>
         <div
           ref={innerRef}
@@ -657,37 +721,8 @@ export function Island() {
         </div>
       </div>
 
-      <div className="ui-bar">
-        <CurrentSwatch onOpen={(t) => setTab(t)} />
-        <span className="ui-sep" aria-hidden="true" />
-        <div className="ui-tabs" role="tablist" aria-label="Remix the background" onKeyDown={onTabsKey}>
-          {TABS.map(({ id, label, Icon }) => {
-            const selected = tab === id;
-            return (
-              <button
-                key={id}
-                ref={(el) => {
-                  tabRefs.current[id] = el;
-                }}
-                type="button"
-                role="tab"
-                id={tabId(id)}
-                aria-selected={selected}
-                aria-controls={PANEL_ID}
-                tabIndex={(tab ?? roving) === id ? 0 : -1}
-                className="ui-tab"
-                onClick={() => toggle(id)}
-                onFocus={() => setRoving(id)}
-              >
-                <Icon className="ui-tab__icon" size={17} />
-                <span className="ui-tab__label">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-        <span className="ui-sep" aria-hidden="true" />
-        <DiceButton />
-      </div>
+      <span className="ui-sep ui-sep--b" aria-hidden="true" />
+      <DiceButton />
     </div>
   );
 }

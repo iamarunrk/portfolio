@@ -182,7 +182,15 @@
   .sel-tag {
     display: none;
   }
-  
+  .sel-btn {
+    height: 32px;
+    min-width: 32px;
+  }
+  .sel-btn span {
+    display: none;
+  }
+}
+
 /* ── title frame (Figma-style) ─────────────────────────────── */
 .frame-rect {
   fill: none;

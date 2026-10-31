@@ -58,6 +58,25 @@ function Background() {
     engine?.setSize(size.width, size.height, dpr);
   }, [engine, size.width, size.height, dpr]);
 
+  // Once the page has settled, compile every shader variant in the background so the
+  // first visit to a swatch never hitches.
+  useEffect(() => {
+    if (!engine) return;
+    let cancelled = false;
+    const idle =
+      (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback ??
+      ((cb: () => void) => window.setTimeout(cb, 1));
+    const id = window.setTimeout(() => {
+      idle(() => {
+        if (!cancelled) engine.precompile().catch(() => {});
+      }, { timeout: 3000 });
+    }, 2500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [engine]);
+
   useEffect(() => {
     if (!engine) return;
     engine.setConfig(bg);

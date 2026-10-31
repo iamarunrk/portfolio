@@ -41,13 +41,14 @@
   user-select: none;
 }
 
-.ui *,
-.ui *::before,
-.ui *::after {
+:where(.ui) *,
+:where(.ui) *::before,
+:where(.ui) *::after {
   box-sizing: border-box;
 }
 
-.ui button {
+/* resets stay at zero specificity so every component class wins over them */
+:where(.ui) button {
   font: inherit;
   letter-spacing: inherit;
   color: inherit;
@@ -59,11 +60,10 @@
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-.ui button:disabled {
+:where(.ui) button:disabled {
   cursor: default;
 }
-.ui h3,
-.ui p {
+:where(.ui) :is(h3, p) {
   margin: 0;
 }
 
@@ -79,10 +79,11 @@
   border: 0;
 }
 
-.ui :focus {
+:where(.ui) :focus {
   outline: none;
 }
-.ui :focus-visible {
+:where(.ui) :focus-visible,
+:where(.ui):focus-visible {
   outline: 2px solid var(--ui-text);
   outline-offset: 2px;
 }
@@ -182,6 +183,14 @@
   max-width: calc(100vw - 24px);
   border-radius: var(--ui-radius);
   transform-origin: 50% 100%;
+  /* panel on top, the collapsed row below; DOM order stays swatch, tabs, panel, dice */
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto calc(var(--ui-bar-h) - 2px);
+  grid-template-areas:
+    'panel panel panel panel panel'
+    'mini sep1 tabs sep2 dice';
+  align-items: center;
 }
 .ui-island[data-hidden] {
   transform: translateY(18px) scale(0.97);
@@ -189,12 +198,16 @@
 
 /* The panel grows upward inside the island (the island is bottom-anchored). */
 .ui-panel {
-  /* never widen the island: the bar decides the width */
-  width: 0;
-  min-width: 100%;
+  grid-area: panel;
+  align-self: stretch;
+  /* never widen the island: the collapsed row decides the width */
+  contain: inline-size;
+  min-width: 0;
   height: 0;
   overflow: hidden;
   border-radius: var(--ui-radius) var(--ui-radius) 0 0;
+  /* hairline between the panel and the row */
+  background: linear-gradient(var(--ui-line-soft), var(--ui-line-soft)) no-repeat 50% 100% / calc(100% - 32px) 1px;
   transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ui-island[data-open] .ui-panel {
@@ -225,7 +238,7 @@
 }
 
 .ui-pbody {
-  animation: ui-swap 0.32s var(--ui-out) both;
+  animation: ui-swap 0.32s var(--ui-out) backwards;
 }
 @keyframes ui-swap {
   from {
@@ -236,40 +249,23 @@
 
 /* --- collapsed row -------------------------------------------------------- */
 
-.ui-bar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: calc(var(--ui-bar-h) - 2px);
-  padding: 6px;
-}
-.ui-bar::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 16px;
-  right: 16px;
-  height: 1px;
-  background: var(--ui-line-soft);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-.ui-island[data-open] .ui-bar::before {
-  opacity: 1;
-}
-
 .ui-sep {
-  flex: none;
   width: 1px;
   height: 20px;
-  margin: 0 5px;
+  margin: 0 7px;
   background: var(--ui-line);
+}
+.ui-sep--a {
+  grid-area: sep1;
+}
+.ui-sep--b {
+  grid-area: sep2;
 }
 
 /* live mini-swatch of the current background */
 .ui-mini {
-  flex: none;
+  grid-area: mini;
+  margin-left: 6px;
   width: 40px;
   height: 40px;
   display: grid;
@@ -315,6 +311,7 @@
 
 /* tabs */
 .ui-tabs {
+  grid-area: tabs;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -366,7 +363,8 @@
 
 /* dice */
 .ui-dice {
-  flex: none;
+  grid-area: dice;
+  margin-right: 6px;
   width: 40px;
   height: 40px;
   display: grid;
@@ -455,12 +453,14 @@
 .ui-rail {
   --fade-l: 22px;
   --fade-r: 22px;
+  /* offsetParent for swatches, so offsetLeft is in scroll-content coordinates */
+  position: relative;
   display: flex;
   gap: 12px;
   overflow-x: auto;
   overflow-y: hidden;
-  margin: -6px -16px 0;
-  padding: 6px 16px 4px;
+  margin: -10px -16px 0;
+  padding: 10px 16px 4px;
   scroll-padding-inline: 16px;
   scroll-snap-type: x proximity;
   overscroll-behavior-x: contain;
@@ -485,7 +485,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   scroll-snap-align: start;
   border-radius: 18px;
 }
@@ -539,11 +539,17 @@
   outline-offset: 5px;
 }
 .ui-swatch__name {
-  max-width: 80px;
+  /* may spill into the rail gap and wrap to two lines ("Northern / Lights") */
+  width: 84px;
+  flex: none;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: center;
   font-size: 11.5px;
+  line-height: 1.2;
   font-weight: 500;
   color: var(--ui-muted);
   transition: color 0.18s ease;
@@ -673,10 +679,10 @@
   transform: scale(0.9) rotate(-20deg);
 }
 
-/* slider grid */
+/* control grid: the component picks a balanced column count (4 -> 2x2, 6 -> 3x2) */
 .ui-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -703,33 +709,20 @@
   z-index: -1;
   inset: 0 auto 0 0;
   width: calc(var(--p) * 100%);
-  background: rgba(255, 255, 255, 0.08);
-  transition: background-color 0.18s ease;
-}
-.ui-slider__handle {
-  position: absolute;
-  z-index: -1;
-  top: 10px;
-  bottom: 10px;
-  left: clamp(5px, calc(var(--p) * 100% - 1px), calc(100% - 7px));
-  width: 2px;
-  border-radius: 2px;
-  background: var(--ui-accent);
-  box-shadow: 0 0 10px rgba(215, 255, 58, 0.55);
+  background: rgba(255, 255, 255, 0.075);
+  box-shadow: inset 0 -2px 0 var(--ui-accent);
   transition:
-    top 0.25s var(--ui-spring),
-    bottom 0.25s var(--ui-spring);
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 .ui-slider:hover .ui-slider__fill {
   background: rgba(255, 255, 255, 0.11);
 }
 .ui-slider[data-dragging] .ui-slider__fill {
-  background: rgba(255, 255, 255, 0.14);
-}
-.ui-slider:hover .ui-slider__handle,
-.ui-slider[data-dragging] .ui-slider__handle {
-  top: 7px;
-  bottom: 7px;
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow:
+    inset -2px 0 0 var(--ui-accent),
+    inset 0 -2px 0 var(--ui-accent);
 }
 .ui-slider:focus-visible {
   outline-offset: 2px;
@@ -764,9 +757,8 @@
   cursor: not-allowed;
   opacity: 0.45;
 }
-.ui-slider[aria-disabled] .ui-slider__handle {
-  background: var(--ui-muted);
-  box-shadow: none;
+.ui-slider[aria-disabled] .ui-slider__fill {
+  box-shadow: inset 0 -2px 0 var(--ui-muted);
 }
 
 /* solid colour dots */
@@ -894,9 +886,6 @@
   font-weight: 500;
   font-size: 13.5px;
   color: var(--ui-text);
-}
-.ui-file__dim {
-  color: var(--ui-dim);
 }
 
 /* "Edited": slides open next to the name */
@@ -1055,7 +1044,7 @@
   padding: 10px 8px 10px 14px;
   border-radius: 18px;
   transform-origin: 50% 100%;
-  animation: ui-hint-in 0.7s var(--ui-spring) both;
+  animation: ui-hint-in 0.7s var(--ui-spring) backwards;
 }
 .ui-hint[data-state='closing'] {
   animation: ui-hint-out 0.26s ease-in both;
@@ -1165,17 +1154,14 @@
   }
 }
 
-@media (max-width: 600px) {
-  .ui-island {
-    min-width: 0;
-  }
-}
-
-@media (max-width: 480px) {
+/* Compact island: below ~640px the desktop row (about 605px) can't fit, so the
+   island spans the screen and tabs go icon-first. */
+@media (max-width: 640px) {
   .ui {
     --ui-bar-h: 62px;
   }
   .ui-island {
+    min-width: 0;
     width: calc(100vw - 24px);
     border-radius: 24px;
   }
@@ -1200,19 +1186,15 @@
   .ui-swatch__thumb {
     height: 68px;
   }
-  .ui-bar {
-    gap: 0;
-    padding: 5px;
-  }
   .ui-sep {
     display: none;
   }
   .ui-mini {
+    margin-left: 5px;
     width: 44px;
     height: 50px;
   }
   .ui-tabs {
-    flex: 1 1 auto;
     min-width: 0;
     gap: 0;
   }
@@ -1233,42 +1215,82 @@
     letter-spacing: -0.01em;
   }
   .ui-dice {
+    margin-right: 5px;
     width: 44px;
     height: 50px;
     border-radius: 17px;
   }
   .ui-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(var(--cols-sm, 2), minmax(0, 1fr));
   }
-  .ui-slider {
-    height: 40px;
-  }
-  .ui-chip {
-    height: 40px;
-  }
-  .ui-chip:not([data-hex]) {
+  .ui-top--right .ui-tbtn {
     width: 40px;
   }
+  .ui-top--left {
+    padding: 0 14px 0 12px;
+  }
+  .ui-hint {
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* Touch: every control at least 40px. */
+@media (max-width: 640px), (pointer: coarse) {
+  .ui-slider,
+  .ui-chip,
+  .ui-grid .ui-chip {
+    height: 40px;
+  }
+  .ui-chip:not([data-hex]),
   .ui-iconbtn {
     width: 40px;
-    height: 40px;
-  }
-  .ui-grid .ui-chip {
     height: 40px;
   }
   .ui-top {
     height: 46px;
   }
-  .ui-top--right .ui-tbtn {
-    width: 40px;
+  .ui-top--right {
+    padding: 2px;
+  }
+  .ui-tbtn {
     height: 40px;
   }
-  .ui-hint {
-    max-width: calc(100vw - 24px);
-  }
   .ui-hint__close {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
+    margin: -6px -2px -6px 0;
+  }
+}
+
+/* Phones: palette chips drop their hex codes so a 4-colour palette stays on one row;
+   "Edited" collapses to an unsaved-changes dot next to the file name. */
+@media (max-width: 480px) {
+  .ui-palette .ui-chip {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+  .ui-palette .ui-chip__hex {
+    display: none;
+  }
+  .ui-palette .ui-chip__dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+  }
+  .ui-badge__pill {
+    width: 18px;
+    padding: 0;
+    justify-content: center;
+    background: transparent;
+  }
+  .ui-badge__text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 

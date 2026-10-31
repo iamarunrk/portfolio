@@ -225,6 +225,7 @@ const HELLO_STOPS = ['#5fd0ff', '#7d7bff', '#c86bff', '#ff5fa8', '#ff8f3d', '#ff
 function drawScreen(st: ScreenState, t: number): void {
   // 9 s loop: hold "hello" (blinking cursor), fade, write it on again
   const T = 9;
+  t = Math.floor(t * 15) / 15; // redraw at most 15 times a second
   const tt = ((t % T) + T) % T;
   let reveal = 1;
   let alpha = 1;

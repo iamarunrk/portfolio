@@ -240,7 +240,23 @@ function paintStickers(sheet: StickerSheet) {
       arcText(q, "it's a beta", 0, 0, 66, Math.PI / 2, { size: 18, family: FONTS.spaceMono, weight: 700, color: '#0d3b1f', tracking: 1 }, true);
     });
   });
-  return { cGood, cChili, cRelax, cZeros, cLight, cShip, cPanic };
+  const cFloppy = sheet.alloc(260, 150);
+  inCell(sheet, cFloppy, (c) => {
+    sticker(c, 0, 0, 0, rrPath(-122, -66, 244, 132, 6), { border: 0, fill: '#fbfaf5', shadow: 0.3 }, (q) => {
+      fillPath(q, rrPath(-122, -66, 244, 22, 0), '#2f6bff');
+      q.strokeStyle = 'rgba(47,107,255,0.35)';
+      q.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        q.beginPath();
+        q.moveTo(-110, 4 + i * 26);
+        q.lineTo(110, 4 + i * 26);
+        q.stroke();
+      }
+      text(q, 'final_v7.fig', -104, 22, { size: 36, family: FONTS.marker, color: '#141414', maxWidth: 210 });
+      text(q, 'DO NOT DELETE!!', -104, 52, { size: 20, family: FONTS.marker, color: '#e8213a' });
+    });
+  });
+  return { cGood, cChili, cRelax, cZeros, cLight, cShip, cPanic, cFloppy };
 }
 
 // ------------------------------------------------------------------ build
@@ -348,6 +364,8 @@ function build(bctx: ObjectBuildContext) {
   btn.push(tint(place(new THREE.CylinderGeometry(0.55, 0.55, 0.9, 24), [-9.7, 4.1, fz + 0.06], [Math.PI / 2, 0, 0]), '#ff7a1a'));
   btn.push(tint(place(new RoundedBoxGeometry(1.5, 0.75, 0.7, 2, 0.25), [8.9, 3.5, fz]), '#d8d0bf'));
   btn.push(tint(place(new THREE.SphereGeometry(0.28, 12, 8), [-7.6, 4.1, fz + 0.05]), '#46e08c'));
+  // a hot-pink floppy half way into the drive
+  btn.push(tint(place(new RoundedBoxGeometry(9.0, 0.34, 9.3, 2, 0.12), [4.6, 5.0, fz + 3.9 - 4.65]), '#ff4fb8'));
   {
     const knob = lathe(
       [
@@ -449,14 +467,24 @@ function build(bctx: ObjectBuildContext) {
   const geos = [
     stickerPatch(edge, -1.2, 2.3, 10.4, 4.45, -4 * DEG, cells.cGood.uv, { nx: 12, ny: 10, offset: 0.03 }),
     stickerPatch(monRight, -1.0, MON.cy + 1.0, 5.5, 7.5, 6 * DEG, cells.cChili.uv, { nx: 4, ny: 4, offset: 0 }),
-    stickerPatch(baseFront, -3.3, 4.0, 5.9, 4.3, -4 * DEG, cells.cRelax.uv, { nx: 4, ny: 4, offset: 0 }),
-    stickerPatch(baseRight, 5.6, 4.2, 6.2, 2.5, 4 * DEG, cells.cZeros.uv, {
+    stickerPatch(baseFront, -3.8, 4.0, 6.3, 4.35, -4 * DEG, cells.cRelax.uv, { nx: 4, ny: 4, offset: 0 }),
+    stickerPatch(baseRight, 5.6, 4.1, 7.6, 3.05, 4 * DEG, cells.cZeros.uv, {
       nx: 8,
       ny: 4,
       offset: 0,
       lift: (u, v) => 0.9 * Math.pow(THREE.MathUtils.smoothstep(u + (1 - v) * 0.25, 0.85, 1.25), 2),
     }),
-    stickerPatch(baseTop, -9.4, -10.2, 8.4, 3.3, 8 * DEG, cells.cLight.uv, { nx: 4, ny: 4, offset: 0 }),
+    stickerPatch(baseTop, -8.8, -9.3, 8.7, 3.45, 6 * DEG, cells.cLight.uv, { nx: 4, ny: 4, offset: 0 }),
+    stickerPatch(
+      surfaces.plane(new THREE.Vector3(0, 5.0 + 0.175, 0), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, -1)),
+      4.6,
+      -(fz + 2.05),
+      7.2,
+      3.0,
+      0,
+      cells.cFloppy.uv,
+      { nx: 2, ny: 2, offset: 0 },
+    ),
     stickerPatch(monLeft, 1.0, MON.cy + 3.0, 5.0, 5.0, -10 * DEG, cells.cPanic.uv, { nx: 4, ny: 4, offset: 0 }),
     stickerPatch(humpBack, 2.5, MON.cy - 1.4, 5.4, 5.4, -12 * DEG, cells.cShip.uv, { nx: 4, ny: 4, offset: 0 }),
   ];

@@ -186,30 +186,25 @@ function build(bctx: ObjectBuildContext) {
     [0.8, 1.0, 1.6, 1.3, 0.3],
   );
   const bodyGeo = sideExtrude(prof, W, BEV);
-  // eyepiece rim on the back slope + a strap lug, same clear plastic
-  const clearParts = [bodyGeo];
-  const slopeN = new THREE.Vector3(0, 10.5 + FRONT_Z - BEV - 0.6, 3.7 - (11.8 - BEV)).normalize().multiplyScalar(-1);
-  slopeN.set(0, Math.abs(slopeN.y), -Math.abs(slopeN.z)).normalize();
-  {
-    const eye = new RoundedBoxGeometry(3.4, 2.2, 1.2, 3, 0.4);
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), slopeN);
-    eye.applyQuaternion(q);
-    eye.translate(-3.2, 5.6, -7.6);
-    clearParts.push(eye);
-  }
-  const clearGeo = merge(clearParts);
-  clearParts.forEach((g) => g.dispose());
+  const clearGeo = bodyGeo;
+  // outward normal and up-direction of the sloped top-back face
+  const slopeDZ = FRONT_Z - BEV - 0.6 + 10.5;
+  const slopeDY = 11.8 - BEV - 3.7;
+  const slopeDir = new THREE.Vector3(0, slopeDY, slopeDZ).normalize();
+  const slopeN = new THREE.Vector3(0, slopeDZ, -slopeDY).normalize();
+  const slopeAt = (x: number, b: number, lift: number) => new THREE.Vector3(x, 3.7, -10.5).addScaledVector(slopeN, BEV + lift).addScaledVector(slopeDir, b);
   const clearMat = translucentPlastic('#f3f6f8', {
-    transmission: 0.93,
-    roughness: 0.24,
-    thickness: 3,
+    transmission: 0.94,
+    roughness: 0.15,
+    specularIntensity: 0.55,
+    thickness: 0.8,
     ior: 1.5,
     attenuationColor: new THREE.Color('#dfe6ea'),
     attenuationDistance: 40,
     glow: '#ffffff',
     glowIntensity: 0.05,
-    clearcoat: 1,
-    clearcoatRoughness: 0.14,
+    clearcoat: 0.3,
+    clearcoatRoughness: 0.1,
   });
   inner.add(new THREE.Mesh(clearGeo, clearMat));
 
@@ -273,6 +268,14 @@ function build(bctx: ObjectBuildContext) {
     lip.translate(0, SLOT_Y - 0.36, PLATE_FRONT - 0.1);
     dark.push(lip);
   }
+  // viewfinder eyepiece on the back slope
+  {
+    const eye = new RoundedBoxGeometry(3.2, 2.1, 0.9, 3, 0.35);
+    eye.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), slopeN));
+    const at = slopeAt(-3.4, 3.6, 0.2);
+    eye.translate(at.x, at.y, at.z);
+    dark.push(eye);
+  }
   // film pack inside
   dark.push(place(new RoundedBoxGeometry(9.4, 1.8, 9.4, 2, 0.25), [0, 2.1, -4.7]));
   // chips on the board
@@ -319,7 +322,7 @@ function build(bctx: ObjectBuildContext) {
     mirror.translate(LENS.x, LENS.y - 0.4, -2.6);
     metal.push(tint(mirror, '#dfe6ec'));
   }
-  metal.push(tint(place(new THREE.CylinderGeometry(0.75, 0.75, 2.2, 24), [-3.9, 4.9, -2.2], [0, 0, Math.PI / 2]), '#c3c9cf'));
+  metal.push(tint(place(new THREE.CylinderGeometry(0.75, 0.75, 2.2, 24), [-3.6, 4.9, -2.6], [0, 0, Math.PI / 2]), '#c3c9cf'));
   for (const ex of [2.65, 5.75]) metal.push(tint(place(new THREE.CylinderGeometry(0.62, 0.62, 0.12, 24), [ex, 10.1, -2.4], [0, 0, Math.PI / 2]), '#d7dce1'));
   const metalGeo = merge(metal);
   metal.forEach((g) => g.dispose());
@@ -469,10 +472,8 @@ function build(bctx: ObjectBuildContext) {
   const tilt = Math.atan2(0.6, 6.3);
   // front face above the film door: origin at y = 5.5, b = distance up the face
   const frontPlane = (lift: number) => surfaces.plane(new THREE.Vector3(0, 5.5, FRONT_Z + lift), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, Math.cos(tilt), -Math.sin(tilt)));
-  // slope (top-back) surface: a = x, b = distance up the slope from the back edge
-  const slopeDir = new THREE.Vector3(0, 11.8 - BEV - 3.7, FRONT_Z - BEV - 0.6 + 10.5).normalize();
-  const slopeOrigin = new THREE.Vector3(0, 3.7, -10.5).addScaledVector(slopeN, BEV + 0.02);
-  const slope = surfaces.plane(slopeOrigin, new THREE.Vector3(-1, 0, 0), slopeDir);
+  // slope (top-back) surface: a = -x (reads from behind), b = distance up the slope from the back edge
+  const slope = surfaces.plane(slopeAt(0, 0, 0.02), new THREE.Vector3(-1, 0, 0), slopeDir);
   const bottom = surfaces.plane(new THREE.Vector3(0, -0.02, 0), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1));
   const stickerGeos = [
     stickerPatch(leftSide, -4.7, 5.35, 4.2, 4.2, 10 * DEG, cCheese.uv, { nx: 4, ny: 4, offset: 0 }),
@@ -490,7 +491,7 @@ function build(bctx: ObjectBuildContext) {
   ];
   const stickersGeo = merge(stickerGeos);
   stickerGeos.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.7 }), '#f3efe6')));
+  inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.55, clearcoat: 0, specularIntensity: 0.25, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }), '#f3efe6')));
 
   return finish(inner, trash, undefined, 'instant-zero');
 }
@@ -505,7 +506,7 @@ export const camera: LibraryDef = {
   name: 'Instant Zero',
   tagline: 'develops ideas in 90 seconds',
   category: 'tech',
-  defaultRotation: [0.2, 0.52, 0.0],
+  defaultRotation: [0.2, 0.5, 0.0],
   build,
 };
 export default camera;

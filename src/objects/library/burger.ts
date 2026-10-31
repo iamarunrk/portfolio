@@ -436,12 +436,12 @@ function build(bctx: ObjectBuildContext) {
   // tomato slices
   {
     const slices: [number, number, number][] = [
-      [1.35, 0.95, 0.4],
-      [-1.55, -0.85, 2.1],
-      [0.4, -2.35, 4.0],
+      [1.75, 1.45, 0.4],
+      [-1.85, 0.75, 2.1],
+      [0.3, -2.1, 4.0],
     ];
     const geos = slices.map(([x, z, rot]) => {
-      const R = 3.25;
+      const R = 3.55;
       const prof: P2[] = [
         [0, 0],
         [R - 0.3, 0],
@@ -527,7 +527,7 @@ function build(bctx: ObjectBuildContext) {
   // ketchup ring under the top bun + drips over the lettuce
   {
     const sn = valueNoise3(3);
-    const outerR = (phi: number) => 5.55 + 0.3 * Math.sin(7 * phi + 0.6) + 0.18 * sn(Math.sin(phi) * 4, Math.cos(phi) * 4, 0.5);
+    const outerR = (phi: number) => 5.2 + 0.28 * Math.sin(7 * phi + 0.6) + 0.16 * sn(Math.sin(phi) * 4, Math.cos(phi) * 4, 0.5);
     const ring = parametric(
       120,
       6,
@@ -558,12 +558,12 @@ function build(bctx: ObjectBuildContext) {
     }
     parts.push(sweep(rim, () => 0.1, 8));
     const drips: [number, number][] = [
-      [-0.35, 1.25],
-      [0.42, 0.85],
-      [1.6, 1.05],
-      [2.75, 0.7],
-      [-1.4, 0.95],
-      [3.7, 1.15],
+      [-0.35, 1.35],
+      [0.42, 0.95],
+      [1.6, 1.2],
+      [2.75, 0.8],
+      [-1.4, 1.05],
+      [3.7, 1.25],
     ];
     for (const [phi, len] of drips) {
       const r = outerR(phi) - 0.1;
@@ -571,7 +571,7 @@ function build(bctx: ObjectBuildContext) {
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i <= 10; i++) {
         const t = i / 10;
-        pts.push(dir.clone().multiplyScalar(r + 0.12 + 0.18 * Math.sin(t * Math.PI * 0.5)).setY(SAUCE_Y - 0.05 - len * t));
+        pts.push(dir.clone().multiplyScalar(r + 0.25 + 0.75 * Math.sin(t * Math.PI * 0.5)).setY(SAUCE_Y - 0.05 - len * t));
       }
       parts.push(sweep(pts, capped(0.15, 0.3, false, true, (t) => 0.8 + 0.5 * t), 10));
     }

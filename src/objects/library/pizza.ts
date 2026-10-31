@@ -179,7 +179,7 @@ function paintCheese(s: Surface): void {
   const K = s.w / (2 * HW);
   const P = (x: number, z: number): [number, number] => [(x + HW) * K, (R + z) * K];
   const r = rng(91);
-  c.fillStyle = '#f6d98d';
+  c.fillStyle = '#f8d57c';
   c.fillRect(0, 0, s.w, s.h);
   // creamy and golden pools
   for (let i = 0; i < 90; i++) {
@@ -188,8 +188,8 @@ function paintCheese(s: Surface): void {
     const rad = (0.5 + r() * 1.5) * K;
     const g = c.createRadialGradient(px, py, 0, px, py, rad);
     const warm = r() > 0.55;
-    g.addColorStop(0, warm ? 'rgba(238,176,74,0.42)' : 'rgba(255,248,222,0.7)');
-    g.addColorStop(1, warm ? 'rgba(238,176,74,0)' : 'rgba(255,248,222,0)');
+    g.addColorStop(0, warm ? 'rgba(236,160,56,0.5)' : 'rgba(255,246,214,0.75)');
+    g.addColorStop(1, warm ? 'rgba(236,160,56,0)' : 'rgba(255,246,214,0)');
     c.fillStyle = g;
     c.beginPath();
     c.arc(px, py, rad, 0, Math.PI * 2);
@@ -217,17 +217,6 @@ function paintCheese(s: Surface): void {
   c.fillStyle = sauce;
   c.fill();
   c.restore();
-  s.maskPath((m) => {
-    for (let i = 0; i <= 60; i++) {
-      const phi = PHI0 + (PHI_LEN * i) / 60;
-      const [px, py] = P((CHEESE_R - 1.2) * Math.sin(phi), (CHEESE_R - 1.2) * Math.cos(phi));
-      if (i === 0) m.moveTo(px, py);
-      else m.lineTo(px, py);
-    }
-    m.lineTo(s.w, 0);
-    m.lineTo(0, 0);
-    m.closePath();
-  }, 0.3, 0);
   for (let i = 0; i < 9; i++) {
     const rr = 2.2 + r() * 6.5;
     const phi = Math.PI + (r() - 0.5) * 1.6 * ALPHA;
@@ -252,20 +241,20 @@ function paintCheese(s: Surface): void {
     c.fill();
   }
   // browned blisters (more towards the crust), with a bump
-  for (let i = 0; i < 64; i++) {
-    const rr = 1.2 + Math.pow(r(), 0.7) * (CHEESE_R - 1.5);
+  for (let i = 0; i < 90; i++) {
+    const rr = 1.0 + Math.pow(r(), 0.75) * (CHEESE_R - 1.3);
     const phi = Math.PI + (r() - 0.5) * 1.85 * ALPHA;
     const x = rr * Math.sin(phi);
     const z = rr * Math.cos(phi);
     if (pepMask(x, z) > 0.2) continue;
     const [px, py] = P(x, z);
-    const rad = (0.16 + r() * 0.48) * K;
+    const rad = (0.18 + r() * 0.55) * K;
     const sq = 0.6 + r() * 0.5;
     const rot = r() * Math.PI;
     const g = c.createRadialGradient(px, py, 0, px, py, rad);
-    g.addColorStop(0, '#8f4a16');
-    g.addColorStop(0.45, '#c9792f');
-    g.addColorStop(0.8, 'rgba(232,170,80,0.85)');
+    g.addColorStop(0, '#7f3c10');
+    g.addColorStop(0.42, '#bf6a24');
+    g.addColorStop(0.78, 'rgba(228,160,70,0.9)');
     g.addColorStop(1, 'rgba(240,190,100,0)');
     c.save();
     c.translate(px, py);
@@ -499,9 +488,7 @@ function paintBread(s: Surface): void {
   });
 }
 
-function paintPepperoni(s: Surface): void {
-  const c = s.c;
-  const W = s.w;
+function paintPepperoni(c: C2D, W: number): void {
   const r = rng(77);
   const cx = W / 2;
   const g = c.createRadialGradient(cx, cx, 0, cx, cx, W / 2);
@@ -532,10 +519,7 @@ function paintPepperoni(s: Surface): void {
   }
 }
 
-function paintBasil(s: Surface): void {
-  const c = s.c;
-  const W = s.w;
-  const H = s.h;
+function paintBasil(c: C2D, W: number, H: number): void {
   const g = c.createLinearGradient(0, 0, W, 0);
   g.addColorStop(0, '#2c7a23');
   g.addColorStop(0.5, '#3f9a2c');
@@ -652,7 +636,7 @@ function build(bctx: ObjectBuildContext) {
 
   // ---------- melted cheese: top sheet + edge beads + drips over the cut faces
   const ck = 78;
-  const cheese = new Surface(Math.round(2 * HW * ck), Math.round(R * ck), bctx, { bump: { base: 0.5, density: 0.5 }, mask: { rough: 0.42, metal: 0, density: 0.5 } });
+  const cheese = new Surface(Math.round(2 * HW * ck), Math.round(R * ck), bctx, { bump: { base: 0.5, density: 0.5 } });
   paintCheese(cheese);
   const sheet = parametric(
     84,
@@ -741,13 +725,11 @@ function build(bctx: ObjectBuildContext) {
   const cheeseGeo = mergeSimple(cheeseParts);
   cheeseParts.forEach((g) => g.dispose());
   warp(cheeseGeo, bend);
-  const cheeseMask = cheese.maskTexture();
   const cheeseMat = new THREE.MeshPhysicalMaterial({
     map: cheese.colorTexture(),
     bumpMap: cheese.bumpTexture(),
-    bumpScale: 1.4,
-    roughnessMap: cheeseMask,
-    roughness: 1,
+    bumpScale: 2.2,
+    roughness: 0.34,
     metalness: 0,
     clearcoat: 0.75,
     clearcoatRoughness: 0.18,
@@ -758,8 +740,14 @@ function build(bctx: ObjectBuildContext) {
   flat.add(new THREE.Mesh(cheeseGeo, cheeseMat));
 
   // ---------- pepperoni (cupped, some with oil pools)
-  const pep = new Surface(512, 512, bctx, {});
-  paintPepperoni(pep);
+  // toppings atlas: pepperoni (left 512x512) + basil leaf (right 128x256), shared by two materials
+  const tops = new Surface(640, 512, bctx, {});
+  paintPepperoni(tops.c, 512);
+  tops.c.save();
+  tops.c.translate(512, 0);
+  paintBasil(tops.c, 128, 256);
+  tops.c.restore();
+  const topsTex = tops.colorTexture();
   const pepGeos = PEPPERONI.map((p) => {
     const rr = p.r;
     const cup = p.cup;
@@ -774,7 +762,7 @@ function build(bctx: ObjectBuildContext) {
       [rr * 0.38, 0.12 + cup * 0.18],
       [0, 0.115],
     ];
-    const g = lathe(prof, { segments: 40, uv: (x, _y, z) => [0.5 + x / (2 * rr * 1.04), 0.5 - z / (2 * rr * 1.04)] });
+    const g = lathe(prof, { segments: 40, uv: (x, _y, z) => [(0.5 + x / (2 * rr * 1.04)) * 0.8, 0.5 - z / (2 * rr * 1.04)] });
     g.rotateY(p.rot);
     const rr0 = Math.hypot(p.x, p.z);
     const phi = Math.atan2(p.x, p.z);
@@ -785,12 +773,10 @@ function build(bctx: ObjectBuildContext) {
   const pepGeo = mergeSimple(pepGeos);
   pepGeos.forEach((g) => g.dispose());
   warp(pepGeo, bend);
-  const pepMat = new THREE.MeshPhysicalMaterial({ map: pep.colorTexture(), roughness: 0.36, metalness: 0, clearcoat: 0.9, clearcoatRoughness: 0.12, sheen: 0.2, sheenColor: new THREE.Color('#ff9a7a') });
+  const pepMat = new THREE.MeshPhysicalMaterial({ map: topsTex, roughness: 0.36, metalness: 0, clearcoat: 0.9, clearcoatRoughness: 0.12, sheen: 0.2, sheenColor: new THREE.Color('#ff9a7a') });
   flat.add(new THREE.Mesh(pepGeo, pepMat));
 
   // ---------- basil leaves
-  const basilTex = new Surface(128, 256, bctx, {});
-  paintBasil(basilTex);
   const leafGeos = BASIL.map((b, i) => {
     const L = 3.1 * b.s;
     const Wd = 1.75 * b.s;
@@ -804,7 +790,7 @@ function build(bctx: ObjectBuildContext) {
         const y = 0.28 * Math.abs(v - 0.5) * 2 * wv + 0.35 * Math.pow(2 * u - 1, 2) + 0.06 * Math.sin(u * 9 + i);
         return out.set(x, y, z);
       },
-      { uv: (u, v) => [v, u] },
+      { uv: (u, v) => [(512 + v * 128) / 640, 0.5 + u * 0.5] },
     );
     g.rotateY(b.rot);
     const rr = Math.hypot(b.x, b.z);
@@ -815,7 +801,7 @@ function build(bctx: ObjectBuildContext) {
   const basilGeo = mergeSimple(leafGeos);
   leafGeos.forEach((g) => g.dispose());
   warp(basilGeo, bend);
-  flat.add(new THREE.Mesh(basilGeo, new THREE.MeshPhysicalMaterial({ map: basilTex.colorTexture(), roughness: 0.32, clearcoat: 0.7, clearcoatRoughness: 0.15, side: THREE.DoubleSide, sheen: 0.3, sheenColor: new THREE.Color('#bff59a') })));
+  flat.add(new THREE.Mesh(basilGeo, new THREE.MeshPhysicalMaterial({ map: topsTex, roughness: 0.32, clearcoat: 0.7, clearcoatRoughness: 0.15, side: THREE.DoubleSide, sheen: 0.3, sheenColor: new THREE.Color('#bff59a') })));
 
   // ---------- sticker sheet: flag (front + back) and a produce sticker on the crust
   const stickers = new StickerSheet(2048, 512, bctx, 12);

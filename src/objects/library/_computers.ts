@@ -98,24 +98,6 @@ export function frameRing(w: number, h: number, r: number, t: number, depth: num
   return new THREE.ExtrudeGeometry(outer, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 10 });
 }
 
-/** Rounded-rectangle Shape centred at the origin. */
-export function rrShape(w: number, h: number, r: number): THREE.Shape {
-  const s = new THREE.Shape();
-  const x = -w / 2;
-  const y = -h / 2;
-  const rr = Math.min(r, w / 2, h / 2);
-  s.moveTo(x + rr, y);
-  s.lineTo(x + w - rr, y);
-  s.quadraticCurveTo(x + w, y, x + w, y + rr);
-  s.lineTo(x + w, y + h - rr);
-  s.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
-  s.lineTo(x + rr, y + h);
-  s.quadraticCurveTo(x, y + h, x, y + h - rr);
-  s.lineTo(x, y + rr);
-  s.quadraticCurveTo(x, y, x + rr, y);
-  return s;
-}
-
 /** Scanlines + vignette + a soft top glare over a W x H CRT canvas (design units). */
 export function crtFinish(c: C2D, W: number, H: number, lineGap = 4, lineAlpha = 0.18): void {
   c.save();

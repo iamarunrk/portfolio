@@ -913,7 +913,7 @@ function build(bctx: ObjectBuildContext) {
 
   const patches: THREE.BufferGeometry[] = [];
   const cm = (cell: { w: number; h: number }, w: number) => (w * cell.h) / cell.w;
-  patches.push(stickerPatch(wall.at, 1.25, wall.sAtY(2.95), 3.55, 3.55, -4 * DEG, cells.cSeal.uv, { nx: 20, ny: 20, offset: 0.025 }));
+  patches.push(stickerPatch(wall.at, 1.35, wall.sAtY(3.25), 3.5, 3.5, -4 * DEG, cells.cSeal.uv, { nx: 20, ny: 20, offset: 0.025 }));
   patches.push(
     stickerPatch(wall.at, -2.05, wall.sAtY(1.2), 2.9, cm(cells.cPink, 2.9), 12 * DEG, cells.cPink.uv, {
       nx: 16,

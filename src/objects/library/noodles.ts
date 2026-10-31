@@ -576,11 +576,12 @@ function build(bctx: ObjectBuildContext) {
   // ---------- stickers on the cup
   const sheet = new StickerSheet(1024, 512, bctx, 12);
   const cells = paintStickers(sheet);
-  let iTop = 0;
-  prof.forEach((p, i) => {
-    if (p[1] > prof[iTop][1]) iTop = i;
-  });
-  const wallProf = prof.slice(3, iTop).filter((p) => p[1] > 0.2 && p[1] < 9.4);
+  // the printed wall is one straight taper (fillets only round its ends): sample it for the sticker surface
+  const wallProf: P2[] = [];
+  for (let k = 0; k <= 12; k++) {
+    const t = k / 12;
+    wallProf.push([3.32 + t * (TOP_R - 0.08 - 3.32), 0.02 + t * (9.32 - 0.02)]);
+  }
   const wall = revolveSurface(wallProf);
   const cm = (cell: { w: number; h: number }, w: number) => (w * cell.h) / cell.w;
   const patches: THREE.BufferGeometry[] = [];
@@ -593,7 +594,7 @@ function build(bctx: ObjectBuildContext) {
     }),
   );
   patches.push(stickerPatch(wall.at, 10.2, wall.sAtY(3.0), 2.4, cm(cells.cPrice, 2.4), 8 * DEG, cells.cPrice.uv, { nx: 12, ny: 6, offset: 0.02 }));
-  patches.push(stickerPatch(wall.at, 2.5, wall.sAtY(2.85), 2.5, cm(cells.cHot, 2.5), -7 * DEG, cells.cHot.uv, { nx: 14, ny: 6, offset: 0.02 }));
+  patches.push(stickerPatch(wall.at, 3.95, wall.sAtY(2.55), 2.4, cm(cells.cHot, 2.4), -7 * DEG, cells.cHot.uv, { nx: 14, ny: 6, offset: 0.02 }));
   const stickersGeo = merge(patches);
   patches.forEach((g) => g.dispose());
   inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheet.surf.colorTexture(), { roughness: 0.4, clearcoat: 0.6 }), '#f4ecdc')));

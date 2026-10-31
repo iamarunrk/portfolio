@@ -6,7 +6,7 @@ import { Trash, finish } from '../build';
 import { lathe, merge, parametric, place, ribbon, stickerPatch, surfaces, tint } from '../geometry';
 import { brushedAluminium, chrome, paperBackfaces, stickerSheet } from '../materials';
 import { FONTS, DEG, rng, text, sticker, rrPath, fillPath, smallPrint, barcode, hazard, type C2D } from '../paint';
-import { clearPlastic, inCell, peelLift, roundRectShape, screwHead, smoothSlab } from './_translucent';
+import { clearPlastic, decalPlane, inCell, peelLift, rectUV, roundRectShape, screwHead, smoothSlab } from './_translucent';
 
 /*
  * COLD STORAGE: a bare hard drive sealed in a chunky clear acrylic case. Mirror platter
@@ -54,18 +54,26 @@ function paintPlatterRough(s: Surface): void {
   }
 }
 
+const BOARD = { w: 1024, h: 1024, pcbH: 400, label: { x: 0, y: 410, w: 480, h: 608 } };
+
+/** PCB art in the top band of the board texture (the drive label lives below it). */
 function paintPCB(s: Surface): void {
   const c = s.c;
+  const S = { w: BOARD.w, h: BOARD.pcbH };
+  c.save();
+  c.beginPath();
+  c.rect(0, 0, S.w, S.h);
+  c.clip();
   c.fillStyle = '#16603a';
-  c.fillRect(0, 0, s.w, s.h);
+  c.fillRect(0, 0, S.w, S.h);
   const r = rng(29);
   c.lineCap = 'round';
   c.lineJoin = 'round';
   for (let i = 0; i < 70; i++) {
     c.strokeStyle = r() > 0.3 ? 'rgba(214,180,90,0.9)' : 'rgba(150,230,170,0.55)';
     c.lineWidth = 2 + r() * 3;
-    let x = r() * s.w;
-    let y = r() * s.h;
+    let x = r() * S.w;
+    let y = r() * S.h;
     c.beginPath();
     c.moveTo(x, y);
     for (let k = 0; k < 4; k++) {
@@ -78,8 +86,16 @@ function paintPCB(s: Surface): void {
   }
   // gold edge fingers and silkscreen
   c.fillStyle = '#e2c25e';
-  for (let i = 0; i < 18; i++) c.fillRect(40 + i * 22, s.h - 34, 12, 30);
+  for (let i = 0; i < 18; i++) c.fillRect(40 + i * 22, S.h - 34, 12, 30);
   smallPrint(c, ['COLD STORAGE CTRL REV.7', 'final_final_v7 inside', 'DO NOT DROP · DO NOT FORMAT'], 470, 40, 22, '#e9fff1', { weight: 700, lineHeight: 26 });
+  c.restore();
+  // the drive label (seen through the acrylic back, so it must be opaque)
+  const L = BOARD.label;
+  c.save();
+  c.translate(L.x + L.w / 2, L.y + L.h / 2);
+  c.scale(0.8, 0.8);
+  paintDriveLabel(c);
+  c.restore();
 }
 
 function paintDriveLabel(c: C2D): void {
@@ -191,12 +207,7 @@ function paintStickers(sheet: StickerSheet) {
       q.stroke();
     });
   });
-  const label = sheet.alloc(480, 608);
-  inCell(sheet, label, (c) => {
-    c.scale(0.8, 0.8);
-    paintDriveLabel(c);
-  });
-  return { logo, bub, tape, file, dot, label };
+  return { logo, bub, tape, file, dot };
 }
 
 // ------------------------------------------------------------------ parts
@@ -404,18 +415,32 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(darkGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.25, clearcoat: 0.4, side: THREE.DoubleSide })));
 
   // ---------- green controller board
-  const pcbSurf = new Surface(1024, 400, bctx, { density: 0.7 });
+  const pcbSurf = new Surface(BOARD.w, BOARD.h, bctx, { density: 0.7 });
   paintPCB(pcbSurf);
   const pcbW = 7.0;
   const pcbH = PCB.y1 - PCB.y0;
   const pcbGeo = smoothSlab(roundRectShape(0, (PCB.y0 + PCB.y1) / 2, pcbW, pcbH, [0.2, 0.2, 0.6, 0.6]), 0.12, 0.02, { bevelSegments: 1, curveSegments: 6, keepUV: true });
+  {
+    // shape-space UVs (cm) -> the PCB band of the board texture
+    const uv = pcbGeo.getAttribute('uv') as THREE.BufferAttribute;
+    const band = BOARD.pcbH / BOARD.h;
+    for (let i = 0; i < uv.count; i++) {
+      const x = uv.getX(i);
+      const y = uv.getY(i);
+      uv.setXY(i, THREE.MathUtils.clamp((x + pcbW / 2) / pcbW, 0, 1), 1 - band * THREE.MathUtils.clamp((PCB.y1 - y) / pcbH, 0, 1));
+    }
+    uv.needsUpdate = true;
+  }
   pcbGeo.translate(0, 0, PCB.z);
-  const pcbTex = pcbSurf.colorTexture();
-  pcbTex.wrapS = THREE.RepeatWrapping;
-  pcbTex.wrapT = THREE.RepeatWrapping;
-  pcbTex.repeat.set(1 / pcbW, 1 / pcbH);
-  pcbTex.offset.set(0.5, -PCB.y0 / pcbH);
-  inner.add(new THREE.Mesh(pcbGeo, new THREE.MeshStandardMaterial({ map: pcbTex, roughness: 0.5, metalness: 0.1 })));
+  // drive label on the back of the base casting (opaque, so it shows through the acrylic)
+  const L = BOARD.label;
+  const labelGeo = decalPlane(5.6, 7.1, rectUV(L.x, L.y, L.w, L.h, BOARD.w, BOARD.h));
+  labelGeo.rotateY(Math.PI);
+  labelGeo.translate(0, 1.15, BASE.z - 0.118);
+  const boardGeo = merge([pcbGeo, labelGeo]);
+  pcbGeo.dispose();
+  labelGeo.dispose();
+  inner.add(new THREE.Mesh(boardGeo, new THREE.MeshStandardMaterial({ map: pcbSurf.colorTexture(), roughness: 0.5, metalness: 0.1 })));
 
   // ---------- chrome: USB-C, case screws on the back corners
   const chr: THREE.BufferGeometry[] = [];
@@ -446,13 +471,11 @@ function build(bctx: ObjectBuildContext) {
   const sheetTex = sheet.surf.colorTexture();
   const front = surfaces.plane(new THREE.Vector3(0, 0, HALF + 0.008), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0));
   const backFace = surfaces.plane(new THREE.Vector3(0, 0, -HALF - 0.008), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0));
-  const baseBack = surfaces.plane(new THREE.Vector3(0, 0, BASE.z - 0.115), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 1, 0));
   const paper: THREE.BufferGeometry[] = [];
   paper.push(stickerPatch(front, 0.75, 3.3, 3.7, 2.1, -5 * DEG, cells.logo.uv, { nx: 6, ny: 4, offset: 0.004, lift: peelLift(0.22, 1, 1, 0.35) }));
   paper.push(stickerPatch(front, -2.72, 0.5, 4.2, 1.49, 92 * DEG, cells.bub.uv, { nx: 8, ny: 4, offset: 0.004 }));
   paper.push(stickerPatch(backFace, -1.2, -3.6, 3.2, 1.45, 4 * DEG, cells.file.uv, { nx: 4, ny: 4, offset: 0.004 }));
   paper.push(stickerPatch(backFace, 2.55, 4.1, 1.3, 1.3, -10 * DEG, cells.dot.uv, { nx: 4, ny: 4, offset: 0.006 }));
-  paper.push(stickerPatch(baseBack, 0, 1.15, 5.6, 7.1, 0, cells.label.uv, { nx: 2, ny: 2, offset: 0.002 }));
   // DO NOT DROP tape wrapped over the right edge (front face -> bevel -> side)
   {
     const xc = W / 2 - BEV;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { fromPx, toPx } from '../layout';
 import { titleLive } from '../hero/titleLive';
 import { useStore, type Transform } from '../store';
+import { homeGestures } from '../view';
 import { engineRef } from './engineRef';
 import {
   AXES,
@@ -80,6 +81,10 @@ export class InteractionController {
   private lastX = 0;
   private lastY = 0;
   private moved = false;
+  /** Gestures on empty canvas belong to the board camera: a swipe or a pinch pulls it back. */
+  private emptyDrag = false;
+  private emptyPinch = 0;
+  private tapSelectsTitle = false;
   private pointerType = 'mouse';
   private shift = false;
 
@@ -342,6 +347,14 @@ export class InteractionController {
     if (this.pointers.size === 2) {
       const o = this.target ?? this.selectedObject();
       if (o) this.startPinch(o);
+      else if (this.mode === 'idle') {
+        if (this.emptyDrag) homeGestures.drag?.('end', x, y, e.pointerType);
+        this.emptyDrag = false;
+        this.pendingDeselect = false;
+        const [a, b] = [...this.pointers.values()];
+        this.emptyPinch = Math.max(10, Math.hypot(b.x - a.x, b.y - a.y));
+        homeGestures.pinch?.('start', 1);
+      }
       return;
     }
     if (this.pointers.size > 2) return;
@@ -351,14 +364,23 @@ export class InteractionController {
     this.moved = false;
     this.pendingDeselect = false;
 
-    const hit = this.hitTest(x, y);
+    let hit = this.hitTest(x, y);
     const st = useStore.getState();
     if (st.islandTab) st.setIslandTab(null);
+    // Touch: the headline sits where thumbs swipe. It only moves once selected (tap it first);
+    // until then a swipe over it belongs to the page.
+    this.tapSelectsTitle = false;
+    if (hit?.type === 'title' && e.pointerType === 'touch' && st.selected !== 'title') {
+      hit = null;
+      this.tapSelectsTitle = true;
+    }
 
     if (!hit) {
       this.mode = 'idle';
       this.pendingDeselect = true;
       this.target = null;
+      this.emptyDrag = true;
+      homeGestures.drag?.('start', e.clientX, e.clientY, e.pointerType);
       return;
     }
     e.preventDefault();
@@ -509,9 +531,19 @@ export class InteractionController {
       this.updatePinch();
       return;
     }
+    if (this.emptyPinch && this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()];
+      homeGestures.pinch?.('move', Math.hypot(b.x - a.x, b.y - a.y) / this.emptyPinch);
+      return;
+    }
     if (this.pointers.size > 1) return;
 
     if (this.mode === 'idle') {
+      if (this.emptyDrag && p) {
+        if (Math.hypot(x - this.downX, y - this.downY) > 6) this.moved = true;
+        homeGestures.drag?.('move', e.clientX, e.clientY, e.pointerType);
+        return;
+      }
       // Hover picking raycasts real geometry: coalesce to once per frame (see update()).
       if (e.pointerType === 'mouse' && e.buttons === 0) this.hoverAt = [x, y];
       return;
@@ -618,6 +650,15 @@ export class InteractionController {
     }
     if (!had) return;
     const st = useStore.getState();
+    if (this.emptyPinch) {
+      this.emptyPinch = 0;
+      homeGestures.pinch?.('end', 1);
+      this.moved = true;
+    }
+    if (this.emptyDrag && this.pointers.size === 0) {
+      this.emptyDrag = false;
+      homeGestures.drag?.('end', e.clientX, e.clientY, e.pointerType);
+    }
 
     if (this.mode === 'pinch') {
       if (this.target) this.commit(this.target);
@@ -640,12 +681,15 @@ export class InteractionController {
 
     const [x, y] = this.local(e);
     if (this.mode === 'idle') {
-      if (this.pendingDeselect && !this.moved) {
+      if (this.pendingDeselect && !this.moved && this.tapSelectsTitle) {
+        st.select('title');
+      } else if (this.pendingDeselect && !this.moved) {
         if (st.selected) st.select(null);
         const f = frameRef.current;
         engineRef.current?.pulse(x / f.widthPx, 1 - y / f.heightPx);
       }
       this.pendingDeselect = false;
+      this.moved = false;
       return;
     }
 
@@ -683,7 +727,9 @@ export class InteractionController {
     const [x, y] = this.local(e);
     let o: LiveObject | null = null;
     const h = this.hitTest(x, y);
-    if (h?.type === 'object') o = registry.get(h.id) ?? null;
+    // A plain wheel is the page's scroll (it pulls the camera back to the board). It only scales the
+    // selected toy; a pinch on the trackpad (ctrl + wheel) scales whatever toy is under the pointer.
+    if (h?.type === 'object') o = e.ctrlKey || useStore.getState().selected === h.id ? (registry.get(h.id) ?? null) : null;
     else if (h && (h.type === 'ring' || h.type === 'scale')) o = this.selectedObject();
     if (!o) {
       const sel = this.selectedObject();

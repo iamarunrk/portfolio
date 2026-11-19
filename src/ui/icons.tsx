@@ -97,6 +97,16 @@ export const IconReset = (p: IconProps) => (
   </Svg>
 );
 
+/** Four frames on a board: the work. */
+export const IconGrid = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="7" height="9" rx="1.6" />
+    <rect x="14" y="4" width="6" height="5" rx="1.6" />
+    <rect x="14" y="12" width="6" height="8" rx="1.6" />
+    <rect x="4" y="16" width="7" height="4" rx="1.6" />
+  </Svg>
+);
+
 export const IconEye = (p: IconProps) => (
   <Svg {...p}>
     <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />

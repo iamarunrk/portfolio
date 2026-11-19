@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:preview": "vite build --mode singlefile",
+    "build:showcase": "vite build --mode showcase",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

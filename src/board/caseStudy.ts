@@ -2,8 +2,11 @@ import { h } from './dom';
 import { WORKS, mountWork, type Work } from './works';
 
 /**
- * Case-study pages. Each product piece has its own address (#/work/<id>): opening one from the
- * board zooms the frame up into the page, the browser's back button zooms it back.
+ * The case-study page.
+ *
+ * Like the homepage, a case study is a real page that sits on the board: its frame is the page seen
+ * from afar. This module only builds and fills the page; the board's camera scales it, unfolds it
+ * out of its frame as you zoom in, and decides when it is "the page you are on".
  */
 
 const ROUTE = /^#\/work\/([\w-]+)$/;
@@ -14,31 +17,31 @@ const DEFAULT_BODY = [
   'Placeholder copy and visuals for now. Add the real story in src/board/works.ts.',
 ];
 
-interface Rect { x: number; y: number; w: number; h: number }
-const rectOf = (el: Element): Rect => {
-  const r = el.getBoundingClientRect();
-  return { x: r.left, y: r.top, w: r.width, h: r.height };
-};
+export const caseWorks = (): Work[] => WORKS.filter((w) => w.case);
 
-export interface CaseStudies {
-  open(work: Work, from?: HTMLElement | null): void;
-  close(): void;
-  isOpen(): boolean;
-  destroy(): void;
+/** The work a `#/work/<id>` address points at, if any. */
+export function caseFromHash(hash = location.hash): Work | null {
+  const m = ROUTE.exec(hash);
+  return (m && caseWorks().find((w) => w.id === m[1])) || null;
+}
+export const caseHash = (work: Work) => `#/work/${work.id}`;
+
+export interface CasePage {
+  el: HTMLElement;
+  scroll: HTMLElement;
+  close: HTMLButtonElement;
+  next: HTMLButtonElement;
+  /** The work currently shown. */
+  work: Work | null;
+  fill(work: Work): void;
+  atTop(): boolean;
+  atBottom(): boolean;
 }
 
-export function createCaseStudies(opts: { onChange(open: boolean): void; sourceOf(work: Work): HTMLElement | null }): CaseStudies {
-  const cases = WORKS.filter((w) => w.case);
-  const ac = new AbortController();
-  const baseTitle = document.title;
-  let current: Work | null = null;
-  let from: HTMLElement | null = null;
-  let pushed = false;
-  let busy: Animation | null = null;
-
-  const el = h('div', { class: 'case', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Case study' });
+export function buildCasePage(el: HTMLElement): CasePage {
+  el.setAttribute('role', 'document');
+  el.setAttribute('aria-label', 'Case study');
   el.innerHTML = `
-    <div class="case__bg"></div>
     <div class="case__scroll">
       <figure class="case__hero"></figure>
       <article class="case__body">
@@ -51,224 +54,38 @@ export function createCaseStudies(opts: { onChange(open: boolean): void; sourceO
       </article>
     </div>
     <button class="case__close" type="button" aria-label="Back to the board">${ARROW}<span>Board</span></button>`;
-  document.body.append(el);
   const q = <T extends HTMLElement>(s: string) => el.querySelector<T>(s)!;
-  const hero = q<HTMLElement>('.case__hero');
-  const bg = q<HTMLElement>('.case__bg');
   const scroll = q<HTMLElement>('.case__scroll');
-  const nextBtn = q<HTMLButtonElement>('.case__next button');
-
-  function fill(work: Work) {
-    const c = work.case;
-    q('.case__kicker').textContent = c?.kicker ?? 'Case study';
-    q('.case__title').textContent = c?.title ?? 'Project name';
-    q('.case__meta').replaceChildren(...(c?.meta ?? []).map((m) => h('span', {}, m)));
-    const text = q('.case__text');
-    text.className = 'case__text';
-    text.style.cssText = 'display:grid;gap:18px';
-    text.replaceChildren(...(c?.body ?? DEFAULT_BODY).map((p) => h('p', { class: 'case__p' }, p)));
-    hero.replaceChildren();
-    mountWork(work, hero, { pause: false });
-    const others = cases.filter((w) => w.id !== work.id);
-    el.querySelectorAll<HTMLElement>('.case__grid > div').forEach((g, i) => {
-      g.replaceChildren();
-      if (others.length) mountWork(others[i % others.length], g);
-    });
-    const next = cases[(cases.indexOf(work) + 1) % cases.length];
-    nextBtn.textContent = `${next.case?.title ?? 'Next'} →`;
-    nextBtn.onclick = () => show(next, null, true);
-    document.title = `${c?.title ?? 'Case study'} · Once upon a time`;
-  }
-
-  function flip(ghost: HTMLElement, a: Rect, b: Rect, r0: string, r1: string, duration: number) {
-    ghost.style.cssText = `left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px`;
-    return ghost.animate(
-      [
-        { transform: `translate(${a.x - b.x}px, ${a.y - b.y}px) scale(${a.w / b.w}, ${a.h / b.h})`, transformOrigin: '0 0', borderRadius: r0 },
-        { transform: 'none', transformOrigin: '0 0', borderRadius: r1 },
-      ],
-      { duration, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' },
-    );
-  }
-
-  /** Show a case study. `replace` swaps the address instead of adding a history entry. */
-  function show(work: Work, fromEl: HTMLElement | null, navigate: boolean, replace = false) {
-    const wasOpen = !!current;
-    current = work;
-    from = fromEl ?? opts.sourceOf(work);
-    if (navigate) {
-      const url = `#/work/${work.id}`;
-      // some embeds refuse history changes: the page still opens, just without its own address
-      try {
-        if (wasOpen || replace) history.replaceState(history.state, '', url);
-        else {
-          history.pushState({ caseStudy: true }, '', url);
-          pushed = true;
-        }
-      } catch {
-        pushed = false;
-      }
-    }
-    fill(work);
-    scroll.scrollTop = 0;
-    el.classList.add('is-open');
-    opts.onChange(true);
-    if (wasOpen) {
-      el.classList.add('is-ready');
-      return;
-    }
-    busy?.cancel();
-    const to = rectOf(hero);
-    if (!fromEl) {
-      // Arrived by address (or the back/forward buttons): no frame to zoom from.
-      bg.style.opacity = '1';
-      el.classList.add('is-ready');
-      return;
-    }
-    bg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 420, easing: 'ease', fill: 'both' });
-    hero.style.visibility = 'hidden';
-    const ghost = h('div', { class: 'case__ghost' });
-    mountWork(work, ghost, { pause: false });
-    el.append(ghost);
-    busy = flip(ghost, rectOf(fromEl), to, '14px', '0px', 620);
-    busy.finished
-      .then(() => {
-        hero.style.visibility = '';
-        ghost.remove();
-        el.classList.add('is-ready');
-        q<HTMLElement>('.case__close').focus({ preventScroll: true });
-      })
-      .catch(() => ghost.remove());
-  }
-
-  function hide() {
-    if (!current) return;
-    const work = current;
-    current = null;
-    pushed = false;
-    document.title = baseTitle;
-    opts.onChange(false);
-    const target = from && from.isConnected ? rectOf(from) : null;
-    const start = rectOf(hero);
-    el.classList.remove('is-ready');
-    const ghost = h('div', { class: 'case__ghost' });
-    mountWork(work, ghost, { pause: false });
-    el.append(ghost);
-    hero.style.visibility = 'hidden';
-    scroll.style.opacity = '0';
-    bg.style.opacity = '';
-    bg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 420, easing: 'ease', fill: 'both' });
-    busy?.cancel();
-    const visible = target && target.w > 4 && target.x < innerWidth && target.y < innerHeight && target.x + target.w > 0 && target.y + target.h > 0;
-    busy = visible
-      ? flip(ghost, start, target, '0px', '14px', 520)
-      : ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'both' });
-    const done = () => {
-      ghost.remove();
-      hero.style.visibility = '';
-      scroll.style.opacity = '';
-      if (!current) el.classList.remove('is-open');
-    };
-    busy.finished.then(done).catch(done);
-  }
-
-  function close() {
-    if (!current) return;
-    const wasPushed = pushed;
-    // close on the page first: some hosts (embeds, previews) ignore history.back()
-    hide();
-    try {
-      if (wasPushed) history.back();
-      else history.replaceState(history.state, '', location.pathname + location.search);
-    } catch {
-      /* no address to restore */
-    }
-    // if the address is still the case study's, drop it so a reload doesn't reopen it
-    window.setTimeout(() => {
-      if (current || !ROUTE.test(location.hash)) return;
-      try {
-        history.replaceState(history.state, '', location.pathname + location.search);
-      } catch {
-        /* ignore */
-      }
-    }, 400);
-  }
-
-  function sync() {
-    const m = ROUTE.exec(location.hash);
-    const work = m ? cases.find((w) => w.id === m[1]) : undefined;
-    if (work) {
-      if (current !== work) show(work, null, false);
-    } else if (current) hide();
-  }
-
-  q<HTMLButtonElement>('.case__close').addEventListener('click', close, { signal: ac.signal });
-
-  // Zooming out of a case study drops it back onto the canvas, the same way the homepage does.
-  let zoomAcc = 0;
-  let zoomAt = 0;
-  el.addEventListener(
-    'wheel',
-    (e) => {
-      if (!(e.ctrlKey || e.metaKey)) return; // a plain scroll reads the page
-      e.preventDefault(); // (and keeps the browser from zooming the whole page instead)
-      const now = performance.now();
-      if (now - zoomAt > 300) zoomAcc = 0;
-      zoomAt = now;
-      zoomAcc = Math.max(0, zoomAcc + e.deltaY);
-      if (zoomAcc > 30) {
-        zoomAcc = 0;
-        close();
-      }
+  const hero = q<HTMLElement>('.case__hero');
+  const page: CasePage = {
+    el,
+    scroll,
+    close: q<HTMLButtonElement>('.case__close'),
+    next: q<HTMLButtonElement>('.case__next button'),
+    work: null,
+    fill(work) {
+      if (page.work === work) return;
+      page.work = work;
+      const c = work.case;
+      q('.case__kicker').textContent = c?.kicker ?? 'Case study';
+      q('.case__title').textContent = c?.title ?? 'Project name';
+      q('.case__meta').replaceChildren(...(c?.meta ?? []).map((m) => h('span', {}, m)));
+      q('.case__text').replaceChildren(...(c?.body ?? DEFAULT_BODY).map((p) => h('p', { class: 'case__p' }, p)));
+      hero.replaceChildren();
+      mountWork(work, hero, { pause: false });
+      const all = caseWorks();
+      const others = all.filter((w) => w.id !== work.id);
+      el.querySelectorAll<HTMLElement>('.case__grid > div').forEach((g, i) => {
+        g.replaceChildren();
+        if (others.length) mountWork(others[i % others.length], g);
+      });
+      const next = all[(all.indexOf(work) + 1) % all.length];
+      page.next.textContent = `${next.case?.title ?? 'Next'} →`;
+      page.next.dataset.id = next.id;
+      scroll.scrollTop = 0;
     },
-    { signal: ac.signal, passive: false },
-  );
-  let pinch0 = 0;
-  const spread = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-  el.addEventListener('touchstart', (e) => (pinch0 = e.touches.length === 2 ? spread(e.touches) : 0), { signal: ac.signal, passive: true });
-  el.addEventListener(
-    'touchmove',
-    (e) => {
-      if (pinch0 && e.touches.length === 2 && spread(e.touches) / pinch0 < 0.8) {
-        pinch0 = 0;
-        close();
-      }
-    },
-    { signal: ac.signal, passive: true },
-  );
-  // Safari reports a trackpad pinch as gesture events
-  el.addEventListener('gesturestart', (e) => e.preventDefault(), { signal: ac.signal });
-  el.addEventListener(
-    'gesturechange',
-    (e) => {
-      e.preventDefault();
-      if ((e as Event & { scale?: number }).scale! < 0.85) close();
-    },
-    { signal: ac.signal },
-  );
-  addEventListener('popstate', sync, { signal: ac.signal });
-  addEventListener('hashchange', sync, { signal: ac.signal });
-  addEventListener(
-    'keydown',
-    (e) => {
-      if (e.key === 'Escape' && current) {
-        e.stopPropagation();
-        close();
-      }
-    },
-    { signal: ac.signal, capture: true },
-  );
-  sync();
-
-  return {
-    open: (work, fromEl) => show(work, fromEl ?? null, true),
-    close,
-    isOpen: () => !!current,
-    destroy() {
-      ac.abort();
-      busy?.cancel();
-      document.title = baseTitle;
-      el.remove();
-    },
+    atTop: () => scroll.scrollTop <= 0.5,
+    atBottom: () => scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 1.5,
   };
+  return page;
 }

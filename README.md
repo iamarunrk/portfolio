@@ -47,8 +47,14 @@ takes it, and stops where you stop.
 - **Getting back in:** zoom in on the selected **Home** frame. The camera steers onto the frame in
   step with your zoom, so it ends exactly on the homepage. (Home is selected when you arrive.)
 
+- **Case studies are pages too.** A product frame is its case-study page seen from afar. Select the
+  frame and zoom in on it: the page unfolds out of the frame as you go, and you are in it once it
+  fills the view. Inside, scrolling reads the page. A new scroll that starts at the end of the page
+  (or at its top, scrolling up) carries on along the same kind of path as the homepage: the page
+  slides away, shrinks and folds back into its frame. Zooming out does the same at the cursor.
+
 The only animated moves are explicit commands: the Work button, the Home chip, **Open home**,
-double-clicking Home, and the jump chips.
+**Open case study**, **Board**, double-clicks, and the jump chips.
 
 | On the board | Desktop | Touch |
 | --- | --- | --- |
@@ -56,8 +62,8 @@ double-clicking Home, and the jump chips.
 | Zoom | <kbd>⌘/Ctrl</kbd> + scroll, trackpad pinch, <kbd>+</kbd> <kbd>−</kbd>, <kbd>Shift</kbd>+<kbd>1</kbd> to fit | pinch |
 | Select a frame | click it (the camera does not move) | tap it |
 | Back to the homepage | zoom in on the selected **Home** frame; or scroll back up right after arriving; or double-click Home, **Open home**, <kbd>Enter</kbd>, the Home chip | pinch out on the selected Home frame; or pull down right after arriving; or the Home chip |
-| Open a case study (product work) | ▶ on the frame, or select it and **Open case study** / <kbd>Enter</kbd> / double-click | ▶, or select and **Open case study** |
-| Leave a case study | **Board**, <kbd>Esc</kbd>, the back button, or zoom out (<kbd>⌘/Ctrl</kbd> + scroll, pinch) | **Board**, or pinch in |
+| Open a case study (product work) | select its frame and zoom in on it; or ▶, **Open case study**, <kbd>Enter</kbd>, double-click | select it and pinch out on it; or ▶, **Open case study** |
+| Leave a case study | zoom out, or scroll on past either end of the page; or **Board**, <kbd>Esc</kbd>, the back button | pinch in, or drag on past either end; or **Board** |
 | Jump to a section | the chips top-left (Overview, Motion, 3D, Product) or the minimap | the chips |
 | Leave a mark | marker <kbd>P</kbd>, stamps <kbd>S</kbd>, sticky notes <kbd>N</kbd>, move frames <kbd>V</kbd>, undo <kbd>⌘Z</kbd> | same tools in the toolbar |
 | Designer's notes | <kbd>C</kbd> | the speech-bubble tool |
@@ -65,8 +71,8 @@ double-clicking Home, and the jump chips.
 Marks (ink, stamps, notes, moved frames) are saved in the visitor's own browser. The two other
 cursors on the board are scripted, not live visitors.
 
-Case studies open as their own address (`#/work/<id>`): the frame zooms up into the page and the
-browser's back button zooms it back. `#work` links straight to the board.
+While you are inside a case study the address is `#/work/<id>`, so it can be linked to and the
+browser's back button leaves it. `#work` links straight to the board.
 
 ### Adding your real work
 
@@ -142,7 +148,7 @@ src/
     board.ts              the board: camera, canvas input, selection, tools, marks, cursors
     works.ts              the list of works (+ CSS stand-ins until real files arrive)
     layout.ts             lays the works out (wide board, or one column on phones)
-    caseStudy.ts          case-study pages (#/work/<id>) with the zoom transition
+    caseStudy.ts          builds the case-study page (the board's camera unfolds it out of its frame)
   objects/                the 3D collectibles (one file each) + sticker painting helpers
   bg/                     background engine, GLSL, presets and metadata
   ui/                     bottom island, top bar, hint, Liquid Glass registry

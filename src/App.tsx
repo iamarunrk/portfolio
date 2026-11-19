@@ -18,15 +18,17 @@ export default function App() {
   const home = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const over = useRef<HTMLDivElement>(null);
+  const casePage = useRef<HTMLDivElement>(null);
   const hud = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!app.current || !home.current || !stage.current || !over.current || !hud.current) return;
+    if (!app.current || !home.current || !stage.current || !over.current || !casePage.current || !hud.current) return;
     const board = createBoard({
       app: app.current,
       home: home.current,
       stage: stage.current,
       over: over.current,
+      casePage: casePage.current,
       hud: hud.current,
       onView: (v) => useStore.getState().setView(v),
       onGlActive: (v) => useStore.getState().setGlActive(v),
@@ -48,6 +50,7 @@ export default function App() {
         <ScrollCue />
       </div>
       <div className="bd-over" ref={over} />
+      <div className="casepage" ref={casePage} />
       <div className="bd-hudroot" ref={hud} />
     </main>
   );

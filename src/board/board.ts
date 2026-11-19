@@ -1,5 +1,5 @@
 import { homeGestures, homeView, type GesturePhase } from '../view';
-import { createCaseStudies } from './caseStudy';
+import { buildCasePage, caseFromHash, caseHash } from './caseStudy';
 import { clamp, ease, h, isTyping, lerp, smoothstep, svg } from './dom';
 import { aspectOf, layoutBoard, type Box, type Frame, type Rect } from './layout';
 import { WORKS, mountWork } from './works';
@@ -16,6 +16,8 @@ import './board.css';
  *  - Scrolling on the homepage runs along a rail (the "portal"): the page first scrolls up like any
  *    page, then that scroll becomes the camera pulling back, and the board assembles around it.
  *  - Zooming (⌘/Ctrl + scroll, pinch) is plain canvas zoom at the cursor, from the homepage too.
+ *  - A case study is a page on the board in the same way: zoom in on its selected frame and the page
+ *    unfolds out of it; scroll past its end, or zoom out, and it folds back.
  *  - The canvas is a plain free canvas: scroll pans, ⌘/Ctrl + scroll or pinch zooms, a click selects.
  *    Zooming in on the selected Home frame steers the camera onto it, so the zoom ends exactly
  *    on the homepage.
@@ -28,6 +30,7 @@ export interface BoardHost {
   home: HTMLElement;
   stage: HTMLElement;
   over: HTMLElement;
+  casePage: HTMLElement;
   hud: HTMLElement;
   /** The camera arrived on / left the homepage. */
   onView(view: 'home' | 'board'): void;
@@ -315,9 +318,15 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   const cam: Cam = homeCam(); // what's on screen
   const free: Cam = camFor(L.first(W / H)); // where the canvas camera is
   const overCam = (): Cam => camFor(L.first(W / H)); // where the portal lands
-  let place: 'home' | 'portal' | 'canvas' = 'home';
-  let flight: { from: Cam; to: Cam; t0: number; ms: number; kind: 'home' | 'canvas' } | null = null;
-  // the portal: scroll position between the homepage (0) and the canvas (S_MAX)
+  let place: 'home' | 'case' | 'portal' | 'canvas' = 'home';
+  let flight: { from: Cam; to: Cam; t0: number; ms: number; kind: 'home' | 'canvas' | 'case'; i?: number } | null = null;
+  // A "page" is a frame you can be inside: the homepage, or a case study (its frame index).
+  type PageKey = 'home' | number;
+  let rail: PageKey = 'home'; // the page the portal leaves from
+  let railDir = 1; // +1: left by scrolling down (the page goes up), -1: by scrolling up past its top
+  let caseAt = -1; // the case study you are in
+  let caseScroll0 = 0; // how far that page was scrolled when you left it
+  // the portal: scroll position between a page (0) and the canvas (S_MAX)
   let S = 0; // on screen (eased)
   let ST = 0; // where the wheel / finger has put it
   let sRate = 16;
@@ -327,7 +336,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   let glActive = true;
   let cover = 1;
   let holding = false; // a finger that started on the homepage is still down
-  let fresh = false; // just arrived from the homepage and haven't moved yet: scrolling back up returns
+  let fresh = false; // just arrived from a page and haven't moved yet: scrolling back returns
   let wheelLock = false; // swallow the rest of the scroll gesture that just landed somewhere
   let selected: number | 'home' | null = null;
 
@@ -343,9 +352,22 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     const ix = Math.max(0, Math.min(W, hx + HERO.w * c.z) - Math.max(0, hx)), iy = Math.max(0, Math.min(H, hy + HERO.h * c.z) - Math.max(0, hy));
     return (ix * iy) / (W * H);
   };
-  /** A commanded move (Work, Home, Open home) is playing: input waits until it lands. */
-  const busy = () => !!sAnim || flight?.kind === 'home';
-  const zMax = () => Math.max(ZMAX, homeCam().z * 1.6);
+  /** A commanded move (Work, Home, Open home, Open case study) is playing: input waits until it lands. */
+  const busy = () => !!sAnim || flight?.kind === 'home' || flight?.kind === 'case';
+  const hasCase = (i: number) => !!FRAMES[i]?.work.case;
+  /** A case study's page on the board: as wide as its frame, with the viewport's shape, top edges aligned. */
+  const caseRect = (i: number): Rect => {
+    const f = FRAMES[i];
+    return { x: f.x + f.dx, y: f.y + f.dy, w: f.w, h: (f.w * H) / W };
+  };
+  const caseCam = (i: number): Cam => {
+    const r = caseRect(i);
+    return { cx: r.x + r.w / 2, cy: r.y + r.h / 2, z: W / r.w };
+  };
+  const pageCam = (k: PageKey): Cam => (k === 'home' ? homeCam() : caseCam(k));
+  /** Where the portal out of a page lands: the whole board for Home, the frame among its neighbours for a case. */
+  const landingCam = (k: PageKey): Cam => (k === 'home' ? overCam() : camFor(frameBox(k, 2.8)));
+  const zMax = () => Math.max(ZMAX, homeCam().z * 1.6, ...FRAMES.map((f) => (f.work.case ? (W / f.w) * 1.05 : 0)));
 
   /**
    * The camera along the portal. The first stretch is a plain page scroll (the homepage moves up
@@ -353,19 +375,31 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
    */
   const zoomT = (sv: number) => smoothstep(170, S_MAX, sv);
   function portalCam(sv: number): Cam {
-    const hc = homeCam(), oc = overCam();
+    const hc = pageCam(rail), oc = landingCam(rail);
     const t = zoomT(sv);
-    return { cx: lerp(hc.cx, oc.cx, t), cy: lerp(hc.cy + sv / hc.z, oc.cy, t), z: Math.exp(lerp(Math.log(hc.z), Math.log(oc.z), t)) };
+    return { cx: lerp(hc.cx, oc.cx, t), cy: lerp(hc.cy + (railDir * sv) / hc.z, oc.cy, t), z: Math.exp(lerp(Math.log(hc.z), Math.log(oc.z), t)) };
   }
-  /** Scroll input (wheel px, or a finger mapped to px) moves along the portal, both ways. */
-  function portalInput(next: number, rate = 16) {
-    if (place === 'home') S = ST = 0;
-    else if (place === 'canvas') {
+  /** Step onto the portal from wherever the camera is resting. */
+  function ontoRail() {
+    if (place === 'home') {
+      rail = 'home';
+      railDir = 1;
+      S = ST = 0;
+    } else if (place === 'case') {
+      rail = caseAt;
+      S = ST = 0;
+      caseScroll0 = casePage.scroll.scrollTop;
+      clearCaseUrl();
+    } else if (place === 'canvas') {
       S = ST = S_MAX;
       select(null);
       follow = -1;
     }
     place = 'portal';
+  }
+  /** Scroll input (wheel px, or a finger mapped to px) moves along the portal, both ways. */
+  function portalInput(next: number, rate = 16) {
+    ontoRail();
     sAnim = null;
     next = clamp(next, 0, S_MAX);
     ST = next;
@@ -373,13 +407,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   }
   /** Play the portal to one end (only for explicit commands: the Work button, Home, Open home). */
   function portalTo(target: number, ms?: number, carry = false) {
-    if (place === 'home') S = ST = 0;
-    else if (place === 'canvas') {
-      S = ST = S_MAX;
-      select(null);
-      follow = -1;
-    }
-    place = 'portal';
+    ontoRail();
     ST = target;
     sAnim = { from: S, to: target, t0: performance.now(), ms: ms ?? 420 + (780 * Math.abs(target - S)) / S_MAX, carry };
   }
@@ -387,9 +415,9 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     place = 'canvas';
     S = ST = S_MAX;
     sAnim = null;
-    Object.assign(free, overCam());
-    // you came from Home, so it is the selection: scroll back up (or zoom in) and you return
-    select('home');
+    Object.assign(free, landingCam(rail));
+    // the page you came from is the selection: scroll back (or zoom in on it) and you return
+    select(rail);
     fresh = true;
     wheelLock = true;
   }
@@ -408,9 +436,100 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     place = 'canvas';
     Object.assign(free, portalCam(S));
     ST = S;
-    select('home');
+    select(rail);
     fresh = false;
   }
+  // ── case studies: pages on the board ─────────────────────────────────────
+  const casePage = buildCasePage(host.casePage);
+  const baseTitle = document.title;
+  const clearCaseUrl = () => {
+    document.title = baseTitle;
+    if (!caseFromHash()) return;
+    try {
+      window.history.replaceState(window.history.state, '', location.pathname + location.search);
+    } catch {
+      /* some embeds refuse history changes */
+    }
+  };
+  /** The camera has come to rest exactly on a case study: it is the page you are on. */
+  function enterCase(i: number) {
+    const again = caseAt === i;
+    place = 'case';
+    caseAt = i;
+    S = ST = 0;
+    sAnim = null;
+    flight = null;
+    fresh = false;
+    wheelLock = true;
+    follow = -1;
+    select(i);
+    const work = FRAMES[i].work;
+    casePage.fill(work);
+    casePage.scroll.scrollTop = again ? caseScroll0 : 0;
+    document.title = `${work.case?.title ?? 'Case study'} · Once upon a time`;
+    if (caseFromHash() !== work) {
+      try {
+        window.history.pushState({ caseStudy: true }, '', caseHash(work));
+      } catch {
+        /* the page still opens, just without its own address */
+      }
+    }
+  }
+  /** Zooming out of a case study: from here it is the canvas, with its frame still the selection. */
+  function leaveCase() {
+    if (place !== 'case') return;
+    caseScroll0 = casePage.scroll.scrollTop;
+    place = 'canvas';
+    Object.assign(free, caseCam(caseAt));
+    select(caseAt);
+    fresh = false;
+    clearCaseUrl();
+  }
+  /** Open a case study on command (▶, Open case study, Enter, double-click): fly onto it. */
+  function openCase(i: number) {
+    if (!hasCase(i) || busy() || place === 'home') return;
+    if (place === 'case') {
+      if (caseAt === i) return;
+      // from one case study straight to another (the "next" link)
+      caseScroll0 = 0;
+      caseAt = -1;
+      return enterCase(i);
+    }
+    leaveRail();
+    if (caseAt !== i) caseScroll0 = 0;
+    select(i);
+    follow = -1;
+    flight = { from: { ...cam }, to: caseCam(i), t0: performance.now(), ms: 900, kind: 'case', i };
+  }
+  /** Leave a case study on command (Board, Esc, the back button): fly back out to its frame. */
+  function closeCase() {
+    if (place !== 'case') return;
+    const i = caseAt;
+    leaveCase();
+    flight = { from: caseCam(i), to: landingCam(i), t0: performance.now(), ms: 900, kind: 'canvas' };
+  }
+  on(casePage.close, 'click', closeCase);
+  on(casePage.next, 'click', () => {
+    const i = FRAMES.findIndex((f) => f.work.id === casePage.next.dataset.id);
+    if (i >= 0) openCase(i);
+  });
+  // the address follows the page: back / forward, or a pasted #/work/<id>
+  const syncCaseUrl = () => {
+    const work = caseFromHash();
+    const i = work ? FRAMES.findIndex((f) => f.work === work) : -1;
+    if (i >= 0) {
+      if (place === 'case' && caseAt === i) return;
+      if (busy()) return;
+      if (place === 'portal') leaveRail();
+      if (place === 'home') Object.assign(free, landingCam(i));
+      caseScroll0 = 0;
+      caseAt = -1;
+      enterCase(i);
+    } else if (place === 'case') closeCase();
+  };
+  on(window, 'popstate', syncCaseUrl);
+  on(window, 'hashchange', syncCaseUrl);
+
   /** The camera has come to rest exactly on the homepage. */
   function enterHome() {
     place = 'home';
@@ -462,22 +581,30 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   }
   /**
    * Canvas zoom by factor `f` about a screen point, exactly as much as the input asks for.
-   * One refinement: zooming in on the selected Home frame steers the camera onto that frame in step
-   * with the zoom (`onHome`), so when the zoom reaches the homepage's own scale it sits exactly on it.
+   * One refinement: zooming in on a selected page frame (Home, or a case study) steers the camera onto
+   * it in step with the zoom, so when the zoom reaches the page's own scale it sits exactly on it.
    */
-  function zoomAt(sx: number, sy: number, f: number, onHome = false) {
+  function zoomAt(sx: number, sy: number, f: number, onTarget = false) {
     touched();
-    const hc = homeCam();
     // zoomed in until the homepage covers most of the view: it becomes the target of the zoom
     if (f > 1 && selected !== 'home' && coverOf(free) > 0.85) select('home');
-    if (f > 1 && selected === 'home' && free.z < hc.z && (onHome || inHero(toBoard(sx, sy)))) {
-      const z = Math.min(free.z * f, hc.z);
-      const t = clamp(Math.log(z / free.z) / Math.log(hc.z / free.z), 0, 1);
-      free.cx = lerp(free.cx, hc.cx, t);
-      free.cy = lerp(free.cy, hc.cy, t);
-      free.z = z;
-      if (z >= hc.z * 0.9995) enterHome();
-      return;
+    // the selected page (Home, or a case study's frame) pulls the zoom onto itself
+    const k: PageKey | null = selected === 'home' ? 'home' : typeof selected === 'number' && hasCase(selected) ? selected : null;
+    if (f > 1 && k != null) {
+      const tc = pageCam(k);
+      const p = toBoard(sx, sy);
+      if (free.z < tc.z && (onTarget || (k === 'home' ? inHero(p) : frameAt(p.x, p.y) === k))) {
+        const z = Math.min(free.z * f, tc.z);
+        const t = clamp(Math.log(z / free.z) / Math.log(tc.z / free.z), 0, 1);
+        free.cx = lerp(free.cx, tc.cx, t);
+        free.cy = lerp(free.cy, tc.cy, t);
+        free.z = z;
+        if (z >= tc.z * 0.9995) {
+          if (k === 'home') enterHome();
+          else enterCase(k);
+        }
+        return;
+      }
     }
     const bx = (sx - W / 2) / free.z + free.cx, by = (sy - H / 2) / free.z + free.cy;
     free.z = clamp(free.z * f, ZMIN, zMax());
@@ -821,17 +948,12 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     toast(`Following ${CURSORS[i].name} · Esc to stop`, 4000);
   }
 
-  // ── case studies ─────────────────────────────────────────────────────────
-  const cases = createCaseStudies({
-    // a case study opened by address shouldn't strand the visitor on the homepage behind it
-    onChange: (open) => {
-      if (open && place === 'home' && !flight) place = 'canvas';
-    },
-    sourceOf: (work) => frameEls[FRAMES.findIndex((f) => f.work === work)]?.querySelector<HTMLElement>('.bd-media') ?? null,
-  });
-  const openCase = (i: number) => cases.open(FRAMES[i].work, frameEls[i].querySelector<HTMLElement>('.bd-media'));
-
   // ── pointer input (canvas) ───────────────────────────────────────────────
+  /** Is this screen point on the selected page frame (Home, or a case study)? Then a zoom in heads for it. */
+  const onSelectedPage = (sx: number, sy: number) => {
+    const p = toBoard(sx, sy);
+    return selected === 'home' ? inHero(p) : typeof selected === 'number' && hasCase(selected) && frameAt(p.x, p.y) === selected;
+  };
   const ptrs = new Map<number, { x: number; y: number }>();
   let gesture: Gesture | null = null;
   /** A finger's travel → portal scroll: 1:1 at first (the page sticks to the finger), then geared up. */
@@ -839,7 +961,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   let lastTap = { t: 0, key: '' };
 
   on(app, 'pointerdown', (e: PointerEvent) => {
-    if (place === 'home' || busy()) return;
+    if (place === 'home' || place === 'case' || busy()) return;
     const target = e.target as Element;
     if (target.closest('.bd-glass, .bd-cmt, .bd-sticky, .bd-cursor b, .bd-open, .bd-play, .home, .case')) return;
     // part-way along the portal, a finger keeps scrolling it (up or down), like the page it still is
@@ -859,7 +981,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       app.classList.remove('is-dragging');
       const [a, b] = [...ptrs.values()];
       const m0 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      gesture = { kind: 'pinch', d0: Math.hypot(b.x - a.x, b.y - a.y), z0: free.z, m0, c0: { cx: free.cx, cy: free.cy }, home: selected === 'home' && inHero(toBoard(m0.x, m0.y)) };
+      gesture = { kind: 'pinch', d0: Math.hypot(b.x - a.x, b.y - a.y), z0: free.z, m0, c0: { cx: free.cx, cy: free.cy }, home: onSelectedPage(m0.x, m0.y) };
       return;
     }
     if (ptrs.size > 2) return;
@@ -888,7 +1010,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       // a finger that pulled the canvas back down keeps hold of the portal until it lifts
       if (ptrs.has(e.pointerId)) {
         const d = sy - gesture.y;
-        fingerTo(gesture.s0 - Math.sign(d) * fingerS(Math.abs(d)));
+        fingerTo(gesture.s0 - railDir * Math.sign(d) * fingerS(Math.abs(d)));
       }
       return;
     }
@@ -942,10 +1064,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       placeFrame(g.i);
     } else {
       const dx = sx - g.x, dy = sy - g.y;
-      // just arrived from the homepage (touch): pulling back down scrolls the portal back, under the finger
-      if (g.touch && !g.moved && fresh && selected === 'home' && dy > 6 && Math.abs(dy) > Math.abs(dx)) {
+      // just arrived from a page (touch): pulling back the way you came scrolls the portal back, under the finger
+      if (g.touch && !g.moved && fresh && selected === rail && dy * railDir > 6 && Math.abs(dy) > Math.abs(dx)) {
         gesture = { kind: 'portal', y: g.y, s0: S_MAX };
-        fingerTo(S_MAX - fingerS(dy));
+        fingerTo(S_MAX - fingerS(dy * railDir));
         return;
       }
       if (!g.moved && Math.hypot(dx, dy) > 5) {
@@ -1008,7 +1130,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       if (twice) flyHome();
     } else if (fi >= 0) {
       select(fi);
-      if (twice && FRAMES[fi].work.type === 'ux') openCase(fi);
+      if (twice && hasCase(fi)) openCase(fi);
     } else select(null);
   }
   frameEls.forEach((el, i) =>
@@ -1017,7 +1139,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       e.preventDefault();
       e.stopPropagation();
       select(i);
-      if (e.key === 'Enter' && FRAMES[i].work.type === 'ux') openCase(i);
+      if (e.key === 'Enter' && hasCase(i)) openCase(i);
     }),
   );
   // the explicit buttons: ▶ and "Open case study" on product frames, "Open home" on the Home frame
@@ -1030,8 +1152,8 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
 
   // wheel. Homepage: a slight scroll flies out. Canvas: scroll pans, ⌘/Ctrl + scroll (or a trackpad pinch) zooms.
   let lastWheel = 0;
+  let edgeArm = 0;
   on(app, 'wheel', (e: WheelEvent) => {
-    if (cases.isOpen()) return;
     if (e.defaultPrevented) return; // a toy on the homepage took it
     const target = e.target as Element;
     const now = performance.now();
@@ -1041,6 +1163,26 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     const dx = e.deltaX * unit, dy = e.deltaY * unit;
     const zoomGesture = e.ctrlKey || e.metaKey;
     if (busy()) return e.preventDefault();
+    if (place === 'case') {
+      if (wheelLock && gap < 140) return e.preventDefault();
+      wheelLock = false;
+      if (zoomGesture) {
+        // zooming out of a case study: plain canvas zoom at the cursor, and the page folds back with it
+        e.preventDefault();
+        if (dy <= 0) return;
+        leaveCase();
+        zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.0045));
+        return;
+      }
+      // a scroll reads the page. A new scroll that starts at either end keeps going, out onto the canvas.
+      if (gap > 160) edgeArm = dy > 0 && casePage.atBottom() ? 1 : dy < 0 && casePage.atTop() ? -1 : 0;
+      if (edgeArm && Math.sign(dy) === edgeArm) {
+        e.preventDefault();
+        railDir = edgeArm;
+        portalInput(Math.abs(dy));
+      }
+      return;
+    }
     if (place === 'home' || place === 'portal') {
       // the island's open panel scrolls by itself; everywhere else a scroll belongs to the page
       if (place === 'home' && target.closest('.ui-island[data-open], .ui-rail')) return;
@@ -1057,7 +1199,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       }
       // a scroll runs along the portal, as far as it is scrolled
       if (place === 'home' && dy <= 0) return;
-      portalInput((place === 'home' ? 0 : ST) + dy);
+      portalInput(place === 'home' ? dy : ST + dy * railDir);
       return;
     }
     if (target.closest('.bd-glass, .bd-sticky')) return;
@@ -1066,16 +1208,16 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     if (wheelLock && gap < 140) return;
     wheelLock = false;
     // right after arriving by the portal: scrolling back up runs it backwards
-    if (!zoomGesture && dy < 0 && fresh && selected === 'home') return portalInput(S_MAX + dy);
+    if (!zoomGesture && fresh && selected === rail && dy * railDir < 0) return portalInput(S_MAX + dy * railDir);
     if (zoomGesture) zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.0045));
     else panBy(dx, dy);
   }, { passive: false });
 
   const zoomStep = (f: number) => {
-    if (place === 'home' || busy()) return;
+    if (place === 'home' || place === 'case' || busy()) return;
     leaveRail();
-    // with the Home frame selected, zooming in heads for the homepage
-    zoomAt(W / 2, H / 2, f, selected === 'home');
+    // with a page frame selected (Home, a case study), zooming in heads for that page
+    zoomAt(W / 2, H / 2, f, selected != null);
   };
   on(zoomEl, 'click', (e: MouseEvent) => {
     const z = btnOf(e)?.dataset.z;
@@ -1138,9 +1280,56 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   };
   homeGestures.openBoard = () => flyOut();
 
+  // touch on a case study: a pinch zooms the canvas between the fingers (the page folds back with it);
+  // dragging on past either end of the page scrolls it away along the portal
+  const ct = { y0: 0, up: false, down: false, d0: 0, drive: false };
+  const spread = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  on(casePage.el, 'touchstart', (e: TouchEvent) => {
+    ct.drive = false;
+    ct.d0 = e.touches.length === 2 ? Math.max(10, spread(e.touches)) : 0;
+    if (e.touches.length === 1 && place === 'case') {
+      ct.y0 = e.touches[0].clientY;
+      ct.down = casePage.atBottom();
+      ct.up = casePage.atTop();
+    }
+  }, { passive: true });
+  on(casePage.el, 'touchmove', (e: TouchEvent) => {
+    if (busy()) return;
+    if (e.touches.length === 2 && ct.d0) {
+      const ratio = spread(e.touches) / ct.d0;
+      if (place === 'case') {
+        if (ratio > 0.985) return;
+        leaveCase();
+      }
+      if (place !== 'canvas' || caseAt < 0) return;
+      const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      zoomAt(mx, my, clamp(caseCam(caseAt).z * Math.min(1, ratio), ZMIN, zMax()) / free.z, true);
+      return;
+    }
+    if (e.touches.length !== 1) return;
+    const d = ct.y0 - e.touches[0].clientY; // > 0: the finger moved up
+    if (place === 'case') {
+      if (ct.down && d > 6) railDir = 1;
+      else if (ct.up && d < -6) railDir = -1;
+      else return;
+      ct.drive = true;
+    }
+    if (ct.drive && (place === 'case' || (place === 'portal' && rail === caseAt))) fingerTo(fingerS(d * railDir));
+  }, { passive: true });
+  on(casePage.el, 'touchend', (e: TouchEvent) => {
+    if (ct.drive && e.touches.length === 0) {
+      ct.drive = false;
+      coast();
+    }
+    ct.d0 = 0;
+  }, { passive: true });
+  on(casePage.el, 'touchcancel', () => {
+    ct.drive = false;
+    ct.d0 = 0;
+  }, { passive: true });
+
   // keyboard
   on(window, 'keydown', (e: KeyboardEvent) => {
-    if (cases.isOpen()) return;
     if (isTyping(e.target)) {
       // Esc finishes a sticky note
       if (e.key === 'Escape' && (e.target as HTMLElement).closest('.bd-sticky')) (e.target as HTMLElement).blur();
@@ -1148,6 +1337,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     }
     const k = e.key.toLowerCase();
     if (busy()) return;
+    if (place === 'case') {
+      if (k === 'escape') closeCase();
+      return;
+    }
     if (place === 'home') {
       if (host.hasSelection() || e.metaKey || e.ctrlKey || e.altKey) return;
       if ((e.target as Element | null)?.closest?.('.ui')) return;
@@ -1175,7 +1368,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     if (k === 'home') return flyHome();
     if (k === 'enter') {
       if (selected === 'home') flyHome();
-      else if (typeof selected === 'number' && FRAMES[selected].work.type === 'ux') openCase(selected);
+      else if (typeof selected === 'number' && hasCase(selected)) openCase(selected);
       return;
     }
     if (e.shiftKey && (e.key === '!' || e.code === 'Digit1')) return flyTo(OVER, 600);
@@ -1207,6 +1400,47 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     wasHome = null;
   };
   on(window, 'resize', onResize);
+
+  // ── the case-study page layer ─────────────────────────────────────────────
+  let caseDrawn: 'off' | 'out' | 'in' = 'off';
+  let caseOpen = false;
+  function drawCase(i: number, q: number) {
+    const el = casePage.el;
+    if (i < 0 || q <= 0) {
+      if (caseDrawn !== 'off') {
+        caseDrawn = 'off';
+        el.classList.remove('is-on', 'is-in');
+      }
+      return;
+    }
+    casePage.fill(FRAMES[i].work);
+    if (place === 'case') {
+      if (caseDrawn !== 'in') {
+        caseDrawn = 'in';
+        el.classList.add('is-on', 'is-in');
+        el.style.transform = el.style.clipPath = el.style.opacity = '';
+        el.style.removeProperty('--hero-h');
+      }
+      return;
+    }
+    if (caseDrawn !== 'out') {
+      caseDrawn = 'out';
+      el.classList.add('is-on');
+      el.classList.remove('is-in');
+    }
+    const f = FRAMES[i], r = caseRect(i), z = cam.z;
+    // q 0 → 0.55: the hero (sitting exactly on the frame) takes its page shape and the body unrolls below it
+    // q 0.55 → 1: the page scrolls back to where it was left
+    const fold = smoothstep(0, 0.55, q), rewind = smoothstep(0.55, 1, q);
+    const heroH = lerp((W * f.h) / f.w, Math.min(0.72 * H, 720), fold);
+    el.style.setProperty('--hero-h', `${heroH.toFixed(1)}px`);
+    el.style.transform = `translate3d(${(W / 2 + (r.x - cam.cx) * z).toFixed(2)}px, ${(H / 2 + (r.y - cam.cy) * z).toFixed(2)}px, 0) scale(${((z * r.w) / W).toFixed(5)})`;
+    const cut = (1 - fold) * Math.max(0, H - heroH);
+    const round = ((FRAME_R * W) / r.w) * (1 - smoothstep(0.8, 1, q));
+    el.style.clipPath = `inset(0 0 ${cut.toFixed(1)}px 0 round ${round.toFixed(1)}px)`;
+    el.style.opacity = smoothstep(0, 0.1, q).toFixed(3);
+    casePage.scroll.scrollTop = (i === caseAt ? caseScroll0 : 0) * rewind;
+  }
 
   // ── the board assembles around the homepage as the portal opens ──────────
   // each section and frame pops in a little later the further it is from Home
@@ -1251,7 +1485,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
         if (t >= 1) S = sAnim.to;
       } else S = Math.abs(ST - S) < 0.5 ? ST : lerp(S, ST, 1 - Math.exp(-dt * sRate));
       if (S >= S_MAX && ST >= S_MAX) arrive();
-      else if (S <= 0 && ST <= 0 && !holding && gesture?.kind !== 'portal') enterHome();
+      else if (S <= 0 && ST <= 0 && !holding && gesture?.kind !== 'portal' && !ct.drive) {
+        if (rail === 'home') enterHome();
+        else enterCase(rail);
+      }
     }
     if (place === 'portal') Object.assign(cam, portalCam(S));
     else if (flight) {
@@ -1260,8 +1497,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       Object.assign(cam, c);
       if (flight.kind === 'canvas') Object.assign(free, c);
       if (t >= 1) {
-        if (flight.kind === 'home') enterHome();
+        const done = flight;
         flight = null;
+        if (done.kind === 'home') enterHome();
+        else if (done.kind === 'case' && done.i != null) enterCase(done.i);
       }
     } else if (place === 'canvas') {
       if (follow >= 0) {
@@ -1312,13 +1551,27 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       over.inert = nowHome;
       host.onView(nowHome ? 'home' : 'board');
     }
-    const gl = ix > 0 && iy > 0 && !cases.isOpen();
+    const gl = ix > 0 && iy > 0 && place !== 'case';
     if (gl !== glActive) {
       glActive = gl;
       host.onGlActive(gl);
     }
-    // the board's own chrome fades in as the homepage shrinks away, and out as it comes back
-    const hudNow = !nowHome && cover < 0.78;
+    // the case study being looked at: its page unfolds out of its frame as the camera closes in on it.
+    // How far it has unfolded depends only on the zoom: the frame under ~45% of the view is just a frame.
+    const eng = place === 'case' ? caseAt
+      : place === 'portal' && rail !== 'home' ? rail
+      : flight?.kind === 'case' && flight.i != null ? flight.i
+      : typeof selected === 'number' && hasCase(selected) ? selected
+      : -1;
+    const caseQ = eng < 0 ? 0 : place === 'case' ? 1 : clamp(1 + Math.log(z / caseCam(eng).z) / Math.log(1 / 0.45), 0, 1);
+    drawCase(eng, caseQ);
+    if (caseQ > 0.02 !== caseOpen) {
+      caseOpen = caseQ > 0.02;
+      app.classList.toggle('case-open', caseOpen);
+    }
+
+    // the board's own chrome fades in as a page shrinks away, and out as one fills the view
+    const hudNow = !nowHome && cover < 0.78 && caseQ < 0.5;
     if (hudNow !== hudOn) {
       hudOn = hudNow;
       app.classList.toggle('hud-on', hudNow);
@@ -1340,7 +1593,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     vp.setAttribute('width', (W / z).toFixed(0));
     vp.setAttribute('height', (H / z).toFixed(0));
 
-    const r = place === 'portal' ? S / S_MAX : 1;
+    const r = place === 'portal' && rail === 'home' ? S / S_MAX : 1;
     assemble(r);
     cue.style.opacity = (smoothstep(0.05, 0.14, r) * (1 - smoothstep(0.34, 0.52, r))).toFixed(3);
     const draw = 1 - smoothstep(0.2, 0.75, cover);
@@ -1368,6 +1621,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       : tool === 'note' ? 'Click anywhere to leave a note.'
       : tool === 'move' ? 'Drag frames around. <b>Tidy up</b> puts them back.'
       : selected === 'home' ? '<b>Home</b> is selected: zoom in on it to go back into the homepage.'
+      : typeof selected === 'number' && hasCase(selected) ? '<b>Case study</b> selected: zoom in on it to open the page.'
       : 'Scroll pans · <b>⌘/Ctrl + scroll</b> zooms · select <b>Home</b> and zoom in to go back.';
     if (tip.dataset.msg !== msg) {
       tip.dataset.msg = msg;
@@ -1381,12 +1635,13 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   hud.inert = true;
   load();
   renderTools();
-  // deep link: #work lands on the canvas
-  if (startOnBoard || location.hash === '#work' || cases.isOpen()) place = 'canvas';
+  // deep links: #work lands on the canvas, #/work/<id> inside that case study
+  if (startOnBoard || location.hash === '#work') place = 'canvas';
+  syncCaseUrl();
   raf = requestAnimationFrame(frame);
 
   return {
-    atHome: () => place !== 'canvas',
+    atHome: () => place === 'home' || (place === 'portal' && rail === 'home'),
     destroy() {
       cancelAnimationFrame(raf);
       cancelAnimationFrame(confettiRaf);
@@ -1394,7 +1649,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       timers.forEach((id) => clearTimeout(id));
       clearTimeout(saveT);
       clearTimeout(toastT);
-      cases.destroy();
+      document.title = baseTitle;
+      host.casePage.replaceChildren();
+      host.casePage.className = 'casepage';
+      host.casePage.removeAttribute('style');
       homeGestures.drag = homeGestures.pinch = homeGestures.openBoard = null;
       stage.replaceChildren();
       over.replaceChildren();
@@ -1406,7 +1664,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       homeView.x = homeView.y = 0;
       homeView.k = 1;
       homeView.home = true;
-      app.classList.remove('hud-on', 'show-comments', 'is-dragging', 'is-hero-hover', 'is-hero-selected');
+      app.classList.remove('hud-on', 'show-comments', 'is-dragging', 'is-hero-hover', 'is-hero-selected', 'case-open');
       delete app.dataset.view;
       delete app.dataset.tool;
       host.onView('home');

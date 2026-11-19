@@ -174,15 +174,24 @@ export function createCaseStudies(opts: { onChange(open: boolean): void; sourceO
 
   function close() {
     if (!current) return;
-    if (pushed) history.back();
-    else {
+    const wasPushed = pushed;
+    // close on the page first: some hosts (embeds, previews) ignore history.back()
+    hide();
+    try {
+      if (wasPushed) history.back();
+      else history.replaceState(history.state, '', location.pathname + location.search);
+    } catch {
+      /* no address to restore */
+    }
+    // if the address is still the case study's, drop it so a reload doesn't reopen it
+    window.setTimeout(() => {
+      if (current || !ROUTE.test(location.hash)) return;
       try {
         history.replaceState(history.state, '', location.pathname + location.search);
       } catch {
-        /* no address to restore */
+        /* ignore */
       }
-      hide();
-    }
+    }, 400);
   }
 
   function sync() {
@@ -194,6 +203,49 @@ export function createCaseStudies(opts: { onChange(open: boolean): void; sourceO
   }
 
   q<HTMLButtonElement>('.case__close').addEventListener('click', close, { signal: ac.signal });
+
+  // Zooming out of a case study drops it back onto the canvas, the same way the homepage does.
+  let zoomAcc = 0;
+  let zoomAt = 0;
+  el.addEventListener(
+    'wheel',
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return; // a plain scroll reads the page
+      e.preventDefault(); // (and keeps the browser from zooming the whole page instead)
+      const now = performance.now();
+      if (now - zoomAt > 300) zoomAcc = 0;
+      zoomAt = now;
+      zoomAcc = Math.max(0, zoomAcc + e.deltaY);
+      if (zoomAcc > 30) {
+        zoomAcc = 0;
+        close();
+      }
+    },
+    { signal: ac.signal, passive: false },
+  );
+  let pinch0 = 0;
+  const spread = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  el.addEventListener('touchstart', (e) => (pinch0 = e.touches.length === 2 ? spread(e.touches) : 0), { signal: ac.signal, passive: true });
+  el.addEventListener(
+    'touchmove',
+    (e) => {
+      if (pinch0 && e.touches.length === 2 && spread(e.touches) / pinch0 < 0.8) {
+        pinch0 = 0;
+        close();
+      }
+    },
+    { signal: ac.signal, passive: true },
+  );
+  // Safari reports a trackpad pinch as gesture events
+  el.addEventListener('gesturestart', (e) => e.preventDefault(), { signal: ac.signal });
+  el.addEventListener(
+    'gesturechange',
+    (e) => {
+      e.preventDefault();
+      if ((e as Event & { scale?: number }).scale! < 0.85) close();
+    },
+    { signal: ac.signal },
+  );
   addEventListener('popstate', sync, { signal: ac.signal });
   addEventListener('hashchange', sync, { signal: ac.signal });
   addEventListener(

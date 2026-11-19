@@ -23,7 +23,7 @@ holds the work (motion, 3D, product). Click the home frame and the camera flies 
 | Nudge / resize | arrow keys, <kbd>[</kbd> <kbd>]</kbd> | |
 | Reset | <kbd>R</kbd> or the pill's **Reset** | pill's **Reset** |
 | Move / scale the headline | drag it, drag its corner handles | tap it first, then drag |
-| Go to the work | a slight scroll (or **Work**, <kbd>PgDn</kbd>) | a short swipe up, or pinch in |
+| Go to the work | scroll down (or **Work**, <kbd>PgDn</kbd>) | swipe up, or pinch in |
 
 The bottom island remixes the canvas: **Shaders** (animated generators), **Gradients**, **Colors**,
 **Glass** (fluted, ribbed, frosted, blur, liquid glass, glass tiles, water, crystal, prism,
@@ -35,9 +35,14 @@ The page is a design board with a camera over it (`src/board/board.ts`). The liv
 real frame on that board: the camera resting on it *is* the homepage, so the zoom between the two is
 one continuous move, not a page change. There is no footer and no second page to scroll.
 
-A slight scroll on the homepage (or a short swipe up, or a pinch in) flies the camera out; after
-that the board is a plain canvas. Nothing zooms by itself, with one exception: zooming in with the
-**Home** frame selected flies back into the homepage.
+Leaving the homepage is one scroll-driven move. The page first scrolls up like any page; as you keep
+scrolling, that scroll turns into the camera pulling back, the page tips and settles into its place
+as a frame, and the sections assemble around it. It follows the wheel or the finger in both
+directions, and once clearly started it finishes by itself when you let go (a nudge of less than
+about 60px settles back). Scrolling back up right after arriving plays it in reverse.
+
+After that the board is a plain canvas. Nothing zooms by itself, with one exception: zooming in with
+the **Home** frame selected flies back into the homepage.
 
 | On the board | Desktop | Touch |
 | --- | --- | --- |
@@ -46,6 +51,7 @@ that the board is a plain canvas. Nothing zooms by itself, with one exception: z
 | Select a frame | click it (the camera does not move) | tap it |
 | Back to the homepage | select **Home** and zoom in; or scroll back up right after arriving; or double-click Home, **Open home**, <kbd>Enter</kbd>, the Home chip | select Home and pinch out; or pull down right after arriving; or the Home chip |
 | Open a case study (product work) | ▶ on the frame, or select it and **Open case study** / <kbd>Enter</kbd> / double-click | ▶, or select and **Open case study** |
+| Leave a case study | **Board**, <kbd>Esc</kbd>, the back button, or zoom out (<kbd>⌘/Ctrl</kbd> + scroll, pinch) | **Board**, or pinch in |
 | Jump to a section | the chips top-left (Overview, Motion, 3D, Product) or the minimap | the chips |
 | Leave a mark | marker <kbd>P</kbd>, stamps <kbd>S</kbd>, sticky notes <kbd>N</kbd>, move frames <kbd>V</kbd>, undo <kbd>⌘Z</kbd> | same tools in the toolbar |
 | Designer's notes | <kbd>C</kbd> | the speech-bubble tool |

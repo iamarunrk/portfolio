@@ -11,7 +11,9 @@ import './board.css';
  * A camera over a design board (laid out by layout.ts from the list of works). The live homepage is one frame on it (the camera
  * resting on that frame *is* the homepage).
  *
- *  - On the homepage, a slight scroll (or swipe, or pinch) flies the camera out to the canvas.
+ *  - Leaving the homepage is one scroll-driven move (the "portal"): the page first scrolls up like
+ *    any page, then that scroll turns into the camera pulling back, and the board assembles
+ *    around it. It follows the wheel or the finger both ways and finishes by itself once started.
  *  - The canvas is a plain free canvas: scroll pans, ⌘/Ctrl + scroll or pinch zooms, a click selects.
  *    Nothing zooms by itself, with one exception: zooming in with the Home frame selected flies
  *    back into the homepage.
@@ -44,12 +46,16 @@ type Gesture =
   | { kind: 'pinch'; d0: number; z0: number; m0: { x: number; y: number }; c0: { cx: number; cy: number }; home: boolean }
   | { kind: 'draw'; s: Stroke }
   | { kind: 'move'; i: number; start: { x: number; y: number }; dx0: number; dy0: number; moved: boolean }
-  | { kind: 'pan'; x: number; y: number; moved: boolean; touch: boolean; fi: number; startCam: Cam };
+  | { kind: 'pan'; x: number; y: number; moved: boolean; touch: boolean; fi: number; startCam: Cam }
+  | { kind: 'portal'; y: number };
 
 const FRAME_R = 14;
 const DIMS: Record<string, string> = { '4/5': '1080 × 1350', '1/1': '1080 × 1080', '16/10': '1920 × 1200', '16/9': '1920 × 1080', '4/3': '1600 × 1200', '9/16': '1080 × 1920' };
-/** How much scroll (px) counts as "a slight scroll" out of, and back into, the homepage. */
-const OUT_T = 36;
+/** Length of the scroll (px) between the homepage and the canvas. */
+const S_MAX = 1100;
+/** Past this much scroll the move finishes by itself when you let go; before it, the page settles back. */
+const S_GO = 60;
+/** A zoom-in this big (px of wheel) on the selected Home frame flies into the homepage. */
 const IN_T = 30;
 const ZMIN = 0.05;
 const ZMAX = 3;
@@ -209,7 +215,9 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   const stampLayer = h('div');
   const noteLayer = h('div');
   const cmtLayer = h('div');
-  top.append(heroSel, ink, stampLayer, noteLayer, cmtLayer);
+  // a note under the homepage that shows while the page is lifting off the board
+  const cue = h('div', { class: 'bd-cue' }, 'keep going', h('br'), 'the work is out here ↓');
+  top.append(heroSel, cue, ink, stampLayer, noteLayer, cmtLayer);
 
   // designer's notes come from the works list (`note`)
   const COMMENTS: [number, string][] = FRAMES.flatMap((f, i) => (f.work.note ? [[i, f.work.note] as [number, string]] : []));
@@ -289,6 +297,8 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   };
   function placeHero() {
     heroSel.style.cssText = `left:${HERO.x}px;top:${HERO.y}px;width:${HERO.w}px;height:${HERO.h}px`;
+    cue.style.left = `${HERO_C.x}px`;
+    cue.style.top = `${HERO.y + HERO.h + 46}px`;
     layoutLinks();
     syncMini();
   }
@@ -306,8 +316,16 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
 
   const cam: Cam = homeCam(); // what's on screen
   const free: Cam = camFor(L.first(W / H)); // where the canvas camera is
-  let place: 'home' | 'canvas' = 'home';
-  let flight: { from: Cam; to: Cam; t0: number; ms: number; kind: 'out' | 'home' | 'canvas' } | null = null;
+  const overCam = (): Cam => camFor(L.first(W / H)); // where the portal lands
+  let place: 'home' | 'portal' | 'canvas' = 'home';
+  let flight: { from: Cam; to: Cam; t0: number; ms: number; kind: 'home' | 'canvas' } | null = null;
+  // the portal: scroll position between the homepage (0) and the canvas (S_MAX)
+  let S = 0; // on screen (eased)
+  let ST = 0; // where the wheel / finger has put it
+  let sRate = 16;
+  let sDir = 1;
+  let sLast = 0;
+  let sAnim: { from: number; to: number; t0: number; ms: number; carry: boolean } | null = null;
   let follow = -1;
   let atHome = true;
   let glActive = true;
@@ -329,8 +347,57 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     const ix = Math.max(0, Math.min(W, hx + HERO.w * c.z) - Math.max(0, hx)), iy = Math.max(0, Math.min(H, hy + HERO.h * c.z) - Math.max(0, hy));
     return (ix * iy) / (W * H);
   };
-  /** In a flight to or from the homepage: input waits until it lands. */
-  const busy = () => !!flight && flight.kind !== 'canvas';
+  /** Between the homepage and the canvas: canvas input waits until the move lands. */
+  const busy = () => place === 'portal' || flight?.kind === 'home';
+
+  /**
+   * The camera along the portal. The first stretch is a plain page scroll (the homepage moves up
+   * 1:1 with the scroll); then the scroll turns into the pull-back, and the frame arcs to its place.
+   */
+  const zoomT = (sv: number) => smoothstep(170, S_MAX, sv);
+  function portalCam(sv: number): Cam {
+    const hc = homeCam(), oc = overCam();
+    const t = zoomT(sv);
+    return { cx: lerp(hc.cx, oc.cx, t), cy: lerp(hc.cy + sv / hc.z, oc.cy, t), z: Math.exp(lerp(Math.log(hc.z), Math.log(oc.z), t)) };
+  }
+  /** Scroll input (wheel px, or a finger mapped to px) moves along the portal, both ways. */
+  function portalInput(next: number, rate = 16) {
+    if (place === 'home') S = ST = 0;
+    else if (place === 'canvas') {
+      S = ST = S_MAX;
+      select(null);
+      follow = -1;
+    }
+    place = 'portal';
+    sAnim = null;
+    next = clamp(next, 0, S_MAX);
+    if (next !== ST) sDir = Math.sign(next - ST);
+    ST = next;
+    sRate = rate;
+    sLast = performance.now();
+  }
+  /** Finish the move by itself, from wherever it is. */
+  function portalTo(target: number, ms?: number, carry = false) {
+    if (place === 'home') S = ST = 0;
+    else if (place === 'canvas') {
+      S = ST = S_MAX;
+      select(null);
+      follow = -1;
+    }
+    place = 'portal';
+    ST = target;
+    sAnim = { from: S, to: target, t0: performance.now(), ms: ms ?? 420 + (780 * Math.abs(target - S)) / S_MAX, carry };
+  }
+  function arrive() {
+    place = 'canvas';
+    S = ST = S_MAX;
+    sAnim = null;
+    Object.assign(free, overCam());
+    // you came from Home, so it is the selection: scroll back up (or zoom in) and you return
+    select('home');
+    fresh = true;
+    wheelLock = true;
+  }
 
   function select(next: number | 'home' | null) {
     if (next === selected) return;
@@ -340,26 +407,23 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     app.classList.toggle('is-hero-selected', next === 'home');
   }
 
-  /** Homepage → canvas. */
-  function flyOut(ms = 1000) {
-    if (place !== 'home' || flight) return;
-    const to = camFor(L.first(W / H));
-    Object.assign(free, to);
-    flight = { from: homeCam(), to, t0: performance.now(), ms, kind: 'out' };
-    place = 'canvas';
-    // you came from Home, so it is the selection: scroll back up (or zoom in) and you return
-    select('home');
-    fresh = true;
-    wheelLock = true;
+  /** Homepage → canvas (the Work button, keys). */
+  function flyOut() {
+    if (place !== 'home') return;
+    portalTo(S_MAX, 1300);
   }
   /** Canvas → homepage. */
   function flyHome(ms = 950) {
-    if (place === 'home' || busy()) return;
-    flight = { from: { ...cam }, to: homeCam(), t0: performance.now(), ms, kind: 'home' };
-    follow = -1;
-    wheelLock = true;
+    if (place !== 'canvas' || flight?.kind === 'home') return;
     gesture = null;
     app.classList.remove('is-dragging');
+    wheelLock = true;
+    // still where the portal dropped you: go back the way you came. Otherwise fly straight in.
+    if (fresh) portalTo(0, 1200);
+    else {
+      flight = { from: { ...cam }, to: homeCam(), t0: performance.now(), ms, kind: 'home' };
+      follow = -1;
+    }
   }
   /** An explicit jump on the canvas (nav chips, minimap, zoom to fit). */
   function flyTo(box: Box, ms = 700) {
@@ -728,6 +792,8 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   // ── pointer input (canvas) ───────────────────────────────────────────────
   const ptrs = new Map<number, { x: number; y: number }>();
   let gesture: Gesture | null = null;
+  /** A finger's travel → portal scroll: 1:1 at first (the page sticks to the finger), then geared up. */
+  const fingerS = (d: number) => (d <= 0 ? 0 : d < 110 ? d : 110 + (d - 110) * 2.5);
   let lastTap = { t: 0, key: '' };
 
   on(app, 'pointerdown', (e: PointerEvent) => {
@@ -767,8 +833,13 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     }
   });
   on(app, 'pointermove', (e: PointerEvent) => {
-    if (place !== 'canvas') return;
     const sx = e.clientX, sy = e.clientY;
+    if (gesture?.kind === 'portal') {
+      // a finger that pulled the canvas back down keeps hold of the portal until it lifts
+      if (ptrs.has(e.pointerId)) portalInput(S_MAX - fingerS(sy - gesture.y), 40);
+      return;
+    }
+    if (place !== 'canvas') return;
     const target = e.target as Element;
     if (e.pointerType === 'mouse') {
       const onHud = !!target.closest?.('.bd-glass');
@@ -821,9 +892,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       placeFrame(g.i);
     } else {
       const dx = sx - g.x, dy = sy - g.y;
-      // just arrived from the homepage (touch): pulling back down returns to it, like scrolling back up
-      if (g.touch && fresh && selected === 'home' && dy > 0 && Math.abs(dy) > Math.abs(dx)) {
-        if (dy > IN_T) flyHome();
+      // just arrived from the homepage (touch): pulling back down scrolls the portal back, under the finger
+      if (g.touch && !g.moved && fresh && selected === 'home' && dy > 6 && Math.abs(dy) > Math.abs(dx)) {
+        gesture = { kind: 'portal', y: g.y };
+        portalInput(S_MAX - fingerS(dy), 40);
         return;
       }
       if (!g.moved && Math.hypot(dx, dy) > 5) {
@@ -846,6 +918,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     }
     gesture = null;
     app.classList.remove('is-dragging');
+    if (g.kind === 'portal') {
+      sLast = 0; // let go: finish now
+      return;
+    }
     if (g.kind === 'draw') {
       marks.strokes.push(g.s);
       history.push({ t: 'stroke', s: g.s });
@@ -919,33 +995,35 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     const dx = e.deltaX * unit, dy = e.deltaY * unit;
     const zoomGesture = e.ctrlKey || e.metaKey;
     if (gap > 240) wheelAcc = 0;
-    if (place === 'home' && !flight) {
+    if (place === 'home' || place === 'portal') {
       // the island's open panel scrolls by itself; everywhere else a scroll belongs to the page
-      if (target.closest('.ui-island[data-open], .ui-rail')) return;
+      if (place === 'home' && target.closest('.ui-island[data-open], .ui-rail')) return;
       e.preventDefault();
       if (wheelLock && gap < 140) return;
       wheelLock = false;
-      wheelAcc = Math.max(0, wheelAcc + dy);
-      if (wheelAcc > OUT_T) {
-        wheelAcc = 0;
-        flyOut();
-      }
+      const d = dy * (zoomGesture ? 5 : 1); // a trackpad pinch reports small deltas
+      if (place === 'home' && d <= 0) return;
+      portalInput((place === 'home' ? 0 : ST) + d);
       return;
     }
     if (target.closest('.bd-glass, .bd-sticky')) return;
     e.preventDefault();
     if (busy()) return;
-    // the tail of the scroll that started a flight (trackpad momentum) must not shove the canvas
+    // the tail of the scroll that finished a move (trackpad momentum) must not shove the canvas
     if (wheelLock && gap < 140) return;
     wheelLock = false;
-    // Home selected: a slight zoom in over it — or, right after arriving, a scroll back up — flies in
-    if (selected === 'home' && dy < 0 && (zoomGesture ? inHero(toBoard(e.clientX, e.clientY)) : fresh)) {
-      wheelAcc = Math.min(0, wheelAcc + dy);
-      if (wheelAcc < -IN_T) {
-        wheelAcc = 0;
-        flyHome();
+    if (selected === 'home' && dy < 0) {
+      // right after arriving: scrolling back up (or zooming in on Home) runs the portal backwards
+      if (fresh && (!zoomGesture || inHero(toBoard(e.clientX, e.clientY)))) return portalInput(S_MAX + dy * (zoomGesture ? 5 : 1));
+      // later: a slight zoom in over the selected Home frame flies into the homepage
+      if (zoomGesture && inHero(toBoard(e.clientX, e.clientY))) {
+        wheelAcc = Math.min(0, wheelAcc + dy);
+        if (wheelAcc < -IN_T) {
+          wheelAcc = 0;
+          flyHome();
+        }
+        return;
       }
-      return;
     }
     if (zoomGesture) zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.0045));
     else panBy(dx, dy);
@@ -969,7 +1047,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     flyTo({ cx: clamp(bx, 0, BW), cy: clamp(by, 0, BH), w: W / free.z, h: H / free.z }, 500);
   });
 
-  // gestures on the empty part of the homepage: a short swipe up, or a pinch in, flies out
+  // gestures on the empty part of the homepage: a swipe up scrolls the portal under the finger, a pinch in pulls back
   let swipeY = 0;
   homeGestures.drag = (phase: GesturePhase, _x: number, y: number, pointerType: string) => {
     if (pointerType === 'mouse') return;
@@ -977,14 +1055,23 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       swipeY = y;
       holding = true;
     } else if (phase === 'move') {
-      if (holding && swipeY - y > OUT_T) flyOut();
-    } else holding = false;
+      if (!holding || place === 'canvas') return;
+      const d = swipeY - y;
+      if (place === 'portal' || d > 6) portalInput(fingerS(d), 40);
+    } else {
+      holding = false;
+      sLast = 0; // let go: finish now
+    }
   };
   homeGestures.pinch = (phase: GesturePhase, ratio: number) => {
     if (phase === 'start') holding = true;
     else if (phase === 'move') {
-      if (ratio < 0.9) flyOut();
-    } else holding = false;
+      if (place === 'canvas') return;
+      if (place === 'portal' || ratio < 0.97) portalInput(S_MAX * clamp(-Math.log(Math.max(0.05, ratio)) / 0.8, 0, 1), 40);
+    } else {
+      holding = false;
+      sLast = 0;
+    }
   };
   homeGestures.openBoard = () => flyOut();
 
@@ -997,8 +1084,9 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       return;
     }
     const k = e.key.toLowerCase();
+    if (place === 'portal') return;
     if (place === 'home') {
-      if (flight || host.hasSelection() || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (host.hasSelection() || e.metaKey || e.ctrlKey || e.altKey) return;
       if ((e.target as Element | null)?.closest?.('.ui')) return;
       if (k === 'pagedown' || k === 'arrowdown' || k === 'end') {
         e.preventDefault();
@@ -1052,9 +1140,32 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     H = Math.max(1, app.clientHeight);
     layoutHero();
     placeHero();
+    if (fresh) Object.assign(free, overCam());
     wasHome = null;
   };
   on(window, 'resize', onResize);
+
+  // ── the board assembles around the homepage as the portal opens ──────────
+  // each section and frame pops in a little later the further it is from Home
+  const pieces: { el: HTMLElement; d: number; k: number }[] = [];
+  {
+    const far = Math.hypot(BW, BH) / 2;
+    const dist = (x: number, y: number) => Math.min(1, Math.hypot(x - HERO_C.x, y - HERO_C.y) / far);
+    under.querySelectorAll<HTMLElement>('.bd-sec').forEach((el, i) => {
+      const sec = SECTIONS[i];
+      pieces.push({ el, d: 0.12 + 0.3 * dist(sec.x + sec.w / 2, sec.y + sec.h / 2), k: 1 });
+    });
+    FRAMES.forEach((f, i) => pieces.push({ el: frameEls[i], d: 0.2 + 0.46 * dist(f.x + f.w / 2, f.y + f.h / 2), k: 1 }));
+  }
+  function assemble(r: number) {
+    for (const p of pieces) {
+      const k = r >= 1 ? 1 : ease(clamp((r - p.d) / 0.3, 0, 1));
+      if (Math.abs(k - p.k) < 0.004 && !(k === 1 && p.k !== 1) && !(k === 0 && p.k !== 0)) continue;
+      p.k = k;
+      p.el.style.opacity = k === 1 ? '' : k.toFixed(3);
+      p.el.style.scale = k === 1 ? '' : (0.86 + 0.14 * k).toFixed(4);
+    }
+  }
 
   // ── render loop ──────────────────────────────────────────────────────────
   let raf = 0;
@@ -1069,7 +1180,27 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     last = now;
     const tsec = now / 1000;
 
-    if (flight) {
+    if (place === 'portal') {
+      // let go part-way: finish the move by itself (on to the canvas once it has clearly started, else back)
+      if (!sAnim && !holding && gesture?.kind !== 'portal' && now - sLast > 150) {
+        const on = sDir > 0 ? ST > S_GO : ST > S_MAX - S_GO;
+        portalTo(on ? S_MAX : 0, undefined, true);
+      }
+      if (sAnim) {
+        const t = clamp((now - sAnim.t0) / sAnim.ms, 0, 1);
+        S = lerp(sAnim.from, sAnim.to, sAnim.carry ? 1 - Math.pow(1 - t, 2.6) : glide(t));
+        if (t >= 1) S = sAnim.to;
+      } else S = Math.abs(ST - S) < 0.5 ? ST : lerp(S, ST, 1 - Math.exp(-dt * sRate));
+      if (S >= S_MAX && ST >= S_MAX) arrive();
+      else if (S <= 0 && ST <= 0 && !holding) {
+        place = 'home';
+        sAnim = null;
+        fresh = false;
+        select(null);
+      }
+    }
+    if (place === 'portal') Object.assign(cam, portalCam(S));
+    else if (flight) {
       const t = clamp((now - flight.t0) / flight.ms, 0, 1);
       const c = mixCam(flight.from, flight.kind === 'home' ? homeCam() : flight.to, glide(t));
       Object.assign(cam, c);
@@ -1110,7 +1241,12 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       homeView.x = homeView.y = 0;
       homeView.k = 1;
     } else {
-      home.style.transform = `translate3d(${hx.toFixed(2)}px, ${hy.toFixed(2)}px, 0) scale(${k.toFixed(5)})`;
+      // through the portal the page tips back a little, like a card lifted off the board and set down
+      const tilt = place === 'portal' ? 5 * Math.sin(Math.PI * zoomT(S)) : 0;
+      home.style.transform =
+        tilt > 0.02
+          ? `translate3d(${(hx + (W * k) / 2).toFixed(2)}px, ${(hy + (H * k) / 2).toFixed(2)}px, 0) scale(${k.toFixed(5)}) perspective(2600px) rotateX(${tilt.toFixed(2)}deg) translate(${-W / 2}px, ${-H / 2}px)`
+          : `translate3d(${hx.toFixed(2)}px, ${hy.toFixed(2)}px, 0) scale(${k.toFixed(5)})`;
       home.style.borderRadius = `${(((FRAME_R * W) / HERO.w) * clamp((1 - cover) / 0.1, 0, 1)).toFixed(2)}px`;
       homeView.x = hx;
       homeView.y = hy;
@@ -1154,6 +1290,9 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     vp.setAttribute('width', (W / z).toFixed(0));
     vp.setAttribute('height', (H / z).toFixed(0));
 
+    const r = place === 'portal' ? S / S_MAX : 1;
+    assemble(r);
+    cue.style.opacity = (smoothstep(0.05, 0.14, r) * (1 - smoothstep(0.34, 0.52, r))).toFixed(3);
     const draw = 1 - smoothstep(0.2, 0.75, cover);
     linkPaths.forEach((p, i) => (p.style.strokeDashoffset = (linkLen[i] * (1 - draw)).toFixed(1)));
 
@@ -1197,7 +1336,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   raf = requestAnimationFrame(frame);
 
   return {
-    atHome: () => place === 'home',
+    atHome: () => place !== 'canvas',
     destroy() {
       cancelAnimationFrame(raf);
       cancelAnimationFrame(confettiRaf);

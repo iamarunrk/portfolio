@@ -151,6 +151,12 @@
 .app.is-hero-hover .bd-herosel .bd-label, .app.is-hero-selected .bd-herosel .bd-label { color: var(--sel); }
 .app.is-hero-selected .bd-herosel .bd-open { display: inline-flex; }
 
+.bd-cue {
+  position: absolute; opacity: 0; pointer-events: none; text-align: center; white-space: nowrap;
+  transform: translateX(-50%) rotate(-2deg) scale(calc(1 / var(--s))); transform-origin: 50% 0;
+  font: 400 19px/1.25 var(--marker); color: var(--lime);
+}
+
 /* visitor layers: marker ink, stamps, sticky notes */
 .bd-ink { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .bd-ink path { fill: none; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; opacity: 0.95; }

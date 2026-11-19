@@ -110,4 +110,4 @@ export function Hint() {
 }
 
 const LEAD = 'Everything here is editable';
-const SUB = 'Drag, spin & scale the toys, then remix the canvas below.';
+const SUB = 'Drag, spin & scale the toys, remix the canvas below. Scroll for the work.';

@@ -980,6 +980,24 @@
 .ui-tbtn--dice:hover svg {
   transform: rotate(14deg);
 }
+/* "Work": the way out to the board */
+.ui-tbtn--work {
+  font-weight: 600;
+}
+.ui-tbtn--work svg {
+  color: var(--ui-accent-fg, var(--ui-accent));
+}
+.ui-tbtn--work:hover:not(:disabled) svg {
+  color: var(--ui-accent-fg, var(--ui-accent));
+  transform: scale(1.12);
+}
+.ui-tsep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: currentColor;
+  opacity: 0.16;
+}
 .ui-spin-back {
   animation: ui-spin-back 0.6s var(--ui-spring);
 }
@@ -1150,7 +1168,7 @@
     padding: 0;
   }
   .ui-top--left {
-    max-width: calc(100vw - 24px - 140px);
+    max-width: calc(100vw - 24px - 186px);
   }
 }
 

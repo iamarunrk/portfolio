@@ -1,6 +1,7 @@
 import { useCallback, useEffect, type RefObject } from 'react';
 import type { GlassPanel } from '../bg/BackgroundEngine';
 import { engineRef } from '../scene/engineRef';
+import { homeView } from '../view';
 
 /**
  * Liquid Glass for the canvas chrome.
@@ -116,13 +117,16 @@ export function collectGlassPanels(out: GlassPanel[]): GlassPanel[] {
     }
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) continue;
+    // The board may be showing the whole page scaled down: map the box back into the page's own px.
+    const v = homeView;
+    const w = r.width / v.k;
     // A CSS scale (press, show/hide) shrinks the corners too.
-    const k = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+    const k = el.offsetWidth > 0 ? w / el.offsetWidth : 1;
     out.push({
-      x: r.left,
-      y: r.top,
-      w: r.width,
-      h: r.height,
+      x: (r.left - v.x) / v.k,
+      y: (r.top - v.y) / v.k,
+      w,
+      h: r.height / v.k,
       radius: e.radius * k,
       strength: (e.opts.strength ?? 1) * Math.min(1, opacity),
       bezel: e.opts.bezel,
@@ -150,7 +154,8 @@ export function updateGlassTones() {
     const r = e.el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) continue;
     list.push(e);
-    regions.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+    const v = homeView;
+    regions.push({ x: (r.left - v.x) / v.k, y: (r.top - v.y) / v.k, w: r.width / v.k, h: r.height / v.k });
   }
   if (!list.length) return;
   let stats: { mean: number; low: number; high: number }[];

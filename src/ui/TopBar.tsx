@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { randomBg } from '../bg/presets';
-import { IconDice, IconEye, IconEyeOff, IconReset, ZeroGlyph } from './icons';
+import { IconDice, IconEye, IconEyeOff, IconGrid, IconReset, ZeroGlyph } from './icons';
 import { keepKeys } from './keys';
 import { useLiquidGlass } from './liquidGlass';
+import { homeGestures } from '../view';
 import './ui.css';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -96,6 +97,11 @@ export function TopBar() {
         inert={hidden}
         onKeyDown={keepKeys}
       >
+        <button type="button" className="ui-tbtn ui-tbtn--work" onClick={() => homeGestures.openBoard?.()} aria-label="See the work" title="See the work (scroll)">
+          <IconGrid size={17} />
+          <span className="ui-tbtn__label ui-tbtn__label--keep">Work</span>
+        </button>
+        <span className="ui-tsep" aria-hidden="true" />
         <button
           type="button"
           className="ui-tbtn ui-tbtn--reset"

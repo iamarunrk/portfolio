@@ -65,6 +65,10 @@ export interface AppState {
   uiHidden: boolean;
   /** Which island tab is open (null = collapsed). */
   islandTab: IslandTab | null;
+  /** 'home' while the camera rests on the homepage, 'board' once it has pulled back. */
+  view: 'home' | 'board';
+  /** False while the homepage is off screen (or covered): its WebGL stops rendering. */
+  glActive: boolean;
 
   setBg(cfg: BgConfig): void;
   setBase(base: BaseLayer): void;
@@ -82,6 +86,8 @@ export interface AppState {
   setUiHidden(v: boolean): void;
   setIslandTab(tab: IslandTab | null): void;
   resetAll(): void;
+  setView(v: 'home' | 'board'): void;
+  setGlActive(v: boolean): void;
 }
 
 export type IslandTab = 'shaders' | 'gradients' | 'colors' | 'glass' | 'effects';
@@ -153,6 +159,8 @@ export const useStore = create<AppState>()((set) => ({
   ink: 'light',
   edited: !!persisted,
   uiHidden: false,
+  view: 'home',
+  glActive: true,
   islandTab: null,
 
   setBg: (cfg) => set({ bg: cloneBg(cfg), edited: true }),
@@ -171,6 +179,8 @@ export const useStore = create<AppState>()((set) => ({
   setTitle: (t) => set({ title: t, edited: true }),
   setInk: (ink) => set({ ink }),
   setUiHidden: (v) => set({ uiHidden: v }),
+  setView: (v) => set((s) => (s.view === v ? s : v === 'board' ? { view: v, selected: null, hovered: null } : { view: v })),
+  setGlActive: (v) => set((s) => (s.glActive === v ? s : { glActive: v })),
   setIslandTab: (tab) => set({ islandTab: tab }),
   resetAll: () =>
     set({

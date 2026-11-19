@@ -1,8 +1,8 @@
 /* ==========================================================================
    The Board
-   The homepage is one frame on a design board. Scrolling pulls the camera
-   back from that frame and tours the work; Explore turns the board into a
-   free canvas (pan, zoom, marker, stamps, notes).
+   The homepage is one frame on a design board. A slight scroll flies the
+   camera out to the board, which is a plain free canvas (pan, zoom, select,
+   marker, stamps, notes). Zooming in with Home selected flies back.
    ========================================================================== */
 :root {
   --bg: #0b0b0d;
@@ -50,7 +50,6 @@
 .app[data-tool='move'] .bd-stage { cursor: default; }
 .app[data-tool='marker'] .bd-stage { cursor: crosshair; }
 .app[data-tool='stamp'] .bd-stage, .app[data-tool='note'] .bd-stage { cursor: copy; }
-.app.is-hero-hover .bd-stage { cursor: zoom-in; }
 
 .bd-over, .bd-hudroot { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
 .bd-over { z-index: 2; }
@@ -77,15 +76,14 @@
   position: absolute;
   border-radius: 14px;
   box-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.7), 0 0 0 calc(1px / var(--s)) rgba(255, 255, 255, 0.07);
-  cursor: zoom-in;
+  cursor: default;
   transition: left 0.6s var(--spring), top 0.6s var(--spring);
 }
-.bd-frame:hover, .bd-frame:focus-visible { z-index: 4; }
+.bd-frame:hover, .bd-frame:focus-visible, .bd-frame.is-selected { z-index: 4; }
 .bd-frame.is-dragged { transition: none; z-index: 5; box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.85); }
 .app[data-tool='move'] .bd-frame { cursor: move; }
 .app[data-tool='marker'] .bd-frame, .app[data-tool='stamp'] .bd-frame, .app[data-tool='note'] .bd-frame { cursor: inherit; }
 .bd-frame .bd-media { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; transition: transform 0.25s ease-out; }
-.bd-frame.is-ux { cursor: pointer; }
 .bd-frame.is-3d { perspective: 900px; }
 .bd-frame.is-3d .bd-media { transform: rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg)); }
 /* selection box with a constant on-screen stroke */
@@ -100,7 +98,21 @@
   transform: translateX(-50%) scale(calc(1 / var(--s))); transform-origin: 50% 0;
   padding: 3px 6px; border-radius: 5px; background: var(--sel); color: #fff; font: 500 11px/1 var(--mono); white-space: nowrap;
 }
-.bd-frame:hover .bd-sel, .bd-frame:focus-visible .bd-sel, .bd-frame.is-dragged .bd-sel { opacity: 1; }
+.bd-frame:hover .bd-sel, .bd-frame:focus-visible .bd-sel, .bd-frame.is-dragged .bd-sel, .bd-frame.is-selected .bd-sel { opacity: 1; }
+/* hover = outline only; selected = handles + size, like a design tool */
+.bd-frame:not(.is-selected):not(.is-dragged) .bd-sel i, .bd-frame:not(.is-selected):not(.is-dragged) .bd-sel b { display: none; }
+.bd-frame.is-ux.is-selected .bd-sel b { display: none; }
+/* the action under a selected frame that can be opened (case studies, Home) */
+.bd-open {
+  position: absolute; left: 50%; top: 100%; margin-top: calc(10px / var(--s));
+  transform: translateX(-50%) scale(calc(1 / var(--s))); transform-origin: 50% 0;
+  display: none; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border: 0; border-radius: 7px; cursor: pointer;
+  background: var(--sel); color: #fff; font: 500 12px/1 var(--ui); white-space: nowrap; pointer-events: auto;
+  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.6);
+}
+.bd-open:hover { filter: brightness(1.1); }
+.bd-open::after { content: '↵'; font: 500 11px/1 var(--mono); opacity: 0.75; }
+.bd-frame.is-ux.is-selected .bd-open { display: inline-flex; }
 .bd-frame:focus-visible { outline: none; }
 /* motion frames: a small timeline scrubs under the frame on hover */
 .bd-timeline {
@@ -124,6 +136,7 @@
   transition: transform 0.35s var(--spring);
 }
 .bd-frame.is-ux:hover .bd-play { transform: translate(35%, -35%) scale(calc(1.25 / var(--s))); }
+.bd-play::after { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
 
 /* connectors from the home frame to each section */
 .bd-links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
@@ -133,14 +146,10 @@
 .bd-herosel { position: absolute; border-radius: 14px; pointer-events: none; }
 .bd-herosel .bd-label { color: rgba(251, 250, 247, 0.62); transition: color 0.12s ease; }
 .bd-herosel .bd-label i { background: var(--lime); border-radius: 50%; }
-.bd-herosel::after { content: ''; position: absolute; inset: calc(-3px / var(--s)); border-radius: 16px; outline: calc(1.5px / var(--s)) solid var(--sel); opacity: 0; transition: opacity 0.12s ease; }
-.bd-herosel b {
-  position: absolute; left: 50%; top: 100%; margin-top: calc(10px / var(--s));
-  transform: translateX(-50%) scale(calc(1 / var(--s))); transform-origin: 50% 0;
-  padding: 5px 9px; border-radius: 6px; background: var(--sel); color: #fff; font: 500 11.5px/1 var(--ui); white-space: nowrap; opacity: 0; transition: opacity 0.12s ease;
-}
-.app.is-hero-hover .bd-herosel::after, .app.is-hero-hover .bd-herosel b { opacity: 1; }
-.app.is-hero-hover .bd-herosel .bd-label { color: var(--sel); }
+.app.is-hero-hover .bd-herosel .bd-sel, .app.is-hero-selected .bd-herosel .bd-sel { opacity: 1; }
+.app:not(.is-hero-selected) .bd-herosel .bd-sel i { display: none; }
+.app.is-hero-hover .bd-herosel .bd-label, .app.is-hero-selected .bd-herosel .bd-label { color: var(--sel); }
+.app.is-hero-selected .bd-herosel .bd-open { display: inline-flex; }
 
 /* visitor layers: marker ink, stamps, sticky notes */
 .bd-ink { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
@@ -205,7 +214,6 @@
 .bd-nav::-webkit-scrollbar { display: none; }
 .bd-nav button { flex: none; height: 34px; padding: 0 11px; border: 0; border-radius: 10px; background: transparent; font: 500 13px/1 var(--ui); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; color: rgba(255, 255, 255, 0.72); transition: background-color 0.15s ease, color 0.15s ease; }
 .bd-nav button:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-.bd-nav button[aria-current='true'] { background: rgba(255, 255, 255, 0.14); color: #fff; }
 .bd-nav button.is-home { color: #fff; font-weight: 600; padding-left: 9px; }
 .bd-nav button.is-home svg { width: 16px; height: 16px; }
 .bd-nav hr { width: 1px; height: 20px; margin: 0 4px; border: 0; background: rgba(255, 255, 255, 0.16); flex: none; }
@@ -216,9 +224,6 @@
 .bd-tool:hover { background: rgba(255, 255, 255, 0.12); }
 .bd-tool:active { transform: scale(0.92); }
 .bd-tool[aria-pressed='true'] { background: var(--lime); color: #111; }
-.bd-tool.is-wide { width: auto; padding: 0 12px 0 10px; gap: 6px; display: inline-flex; align-items: center; font: 500 13px/1 var(--ui); }
-.bd-tool.is-primary { background: rgba(255, 255, 255, 0.12); }
-.bd-tool.is-primary:hover { background: rgba(255, 255, 255, 0.2); }
 .bd-tools hr { width: 1px; height: 20px; margin: 0 4px; border: 0; background: rgba(255, 255, 255, 0.16); }
 .bd-tray { left: 50%; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 58px); translate: -50% 0; display: none; gap: 4px; padding: 5px; border-radius: 14px; }
 .bd-tray.is-on { display: flex; }
@@ -232,11 +237,7 @@
 .bd-zoom { display: flex; align-items: center; gap: 2px; height: 44px; padding: 5px; border-radius: 15px; font: 500 12px/1 var(--mono); }
 .bd-zoom button { width: 34px; height: 34px; border: 0; border-radius: 10px; background: transparent; font: 500 17px/1 var(--ui); cursor: pointer; }
 .bd-zoom button:hover { background: rgba(255, 255, 255, 0.12); }
-.bd-zoom span { min-width: 46px; text-align: center; color: rgba(255, 255, 255, 0.82); }
-.bd-done { display: none; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border: 0; border-radius: 15px; font: 500 13px/1 var(--ui); cursor: pointer; }
-.app.is-explore .bd-done { display: inline-flex; }
-.bd-done kbd { font: 500 10px/1 var(--mono); padding: 3px 5px; border-radius: 5px; background: rgba(255, 255, 255, 0.14); }
-
+.bd-zoom .pct { width: auto; min-width: 50px; padding: 0 4px; font: 500 12px/1 var(--mono); color: rgba(255, 255, 255, 0.82); }
 .bd-mini { right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); width: 176px; height: 112px; border-radius: 14px; padding: 8px; cursor: pointer; }
 .bd-mini svg { width: 100%; height: 100%; display: block; pointer-events: none; }
 .bd-mini .vp { fill: rgba(255, 255, 255, 0.08); stroke: #fff; stroke-width: 16; }
@@ -249,12 +250,8 @@
 @media (max-width: 720px) {
   .bd-mini, .bd-tip, .bd-zoom { display: none; }
   .bd-tool { width: 34px; height: 34px; }
-  .bd-tool.is-wide span { display: none; }
-  .bd-tool.is-wide { width: 34px; padding: 0; justify-content: center; }
   .bd-tools hr { margin: 0 1px; }
   .bd-nav { max-width: calc(100vw - 24px); }
-  .app.is-explore .bd-nav { max-width: calc(100vw - 24px - 96px); }
-  .bd-done kbd { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .bd-timeline span b { animation: none; }

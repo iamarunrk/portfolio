@@ -5,7 +5,7 @@ import { WORKS, type Work, type WorkType } from './works';
  *
  *   ┌ Motion ┐   ┌ Home ┐   ┌ 3D ┐      Motion and 3D are three-column masonry (wide pieces span two),
  *   └────────┘   └──────┘   └────┘      Product is rows of equal height. Sections grow with their content
- *        ┌──── Product ────┐            and the story gets a stop per screenful.
+ *        ┌──── Product ────┐            and each one is a jump target for the nav chips.
  *        └─────────────────┘
  */
 
@@ -19,7 +19,7 @@ export interface StoryStop { id: string; name: string; boxes: Box[] }
 export interface BoardLayout {
   w: number;
   h: number;
-  /** Phones: everything is stacked in one column, so the story scrolls straight down. */
+  /** Phones: everything is stacked in one column, so you pan straight down. */
   portrait: boolean;
   sections: Section[];
   frames: Frame[];

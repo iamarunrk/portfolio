@@ -9,10 +9,12 @@ import './board.css';
  * The Board.
  *
  * A camera over a design board (laid out by layout.ts from the list of works). The live homepage is one frame on it (the camera
- * resting on that frame *is* the homepage). Two ways to move:
+ * resting on that frame *is* the homepage).
  *
- *  - Story: scrolling runs the camera along a rail: home → whole board → each section.
- *  - Explore: the board is a free canvas (pan, zoom, marker, stamps, notes, move frames).
+ *  - On the homepage, a slight scroll (or swipe, or pinch) flies the camera out to the canvas.
+ *  - The canvas is a plain free canvas: scroll pans, ⌘/Ctrl + scroll or pinch zooms, a click selects.
+ *    Nothing zooms by itself, with one exception: zooming in with the Home frame selected flies
+ *    back into the homepage.
  *
  * Everything here is imperative DOM so camera moves never re-render React.
  */
@@ -39,14 +41,16 @@ interface Stamp { k: string; x: number; y: number; r: number; f: number; el?: HT
 interface Note { x: number; y: number; r: number; c: string; text: string; el?: HTMLElement }
 type Action = { t: 'stroke'; s: Stroke } | { t: 'stamp'; s: Stamp } | { t: 'note'; n: Note } | { t: 'move'; i: number; dx: number; dy: number };
 type Gesture =
-  | { kind: 'pinch'; d0: number; z0: number; m0: { x: number; y: number }; c0: { cx: number; cy: number } }
+  | { kind: 'pinch'; d0: number; z0: number; m0: { x: number; y: number }; c0: { cx: number; cy: number }; home: boolean }
   | { kind: 'draw'; s: Stroke }
   | { kind: 'move'; i: number; start: { x: number; y: number }; dx0: number; dy0: number; moved: boolean }
-  | { kind: 'pan'; x: number; y: number; moved: boolean; touch: boolean; fi: number; startCam: Cam | null; sp: { px: number; py: number }; rail: boolean };
+  | { kind: 'pan'; x: number; y: number; moved: boolean; touch: boolean; fi: number; startCam: Cam };
 
 const FRAME_R = 14;
 const DIMS: Record<string, string> = { '4/5': '1080 × 1350', '1/1': '1080 × 1080', '16/10': '1920 × 1200', '16/9': '1920 × 1080', '4/3': '1600 × 1200', '9/16': '1080 × 1920' };
-const HOME_END = 600;
+/** How much scroll (px) counts as "a slight scroll" out of, and back into, the homepage. */
+const OUT_T = 36;
+const IN_T = 30;
 const ZMIN = 0.05;
 const ZMAX = 3;
 
@@ -60,8 +64,6 @@ const ICON: Record<string, string> = {
   undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6L4 11l5 5"/><path d="M4 11h10a5 5 0 0 1 0 10h-2"/></svg>',
   tidy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>',
   clear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
-  explore: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
-  tour: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><ellipse cx="12" cy="12" rx="5.6" ry="7.4"/></svg>',
 };
 const STAMPS: Record<string, string> = {
@@ -176,7 +178,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
 
   const frameEls = FRAMES.map((f, i) => {
     const t = f.work.type;
-    const el = h('div', { class: `bd-frame is-${t}`, tabindex: '0', role: 'button', 'data-i': String(i), 'aria-label': t === 'ux' ? 'Open case study' : 'Zoom to this piece' });
+    const el = h('div', { class: `bd-frame is-${t}`, tabindex: '0', role: 'button', 'data-i': String(i), 'aria-label': t === 'ux' ? 'Case study' : t === '3d' ? '3D piece' : 'Motion piece' });
     const media = h('div', { class: 'bd-media' });
     el.append(media);
     mountWork(f.work, media);
@@ -185,7 +187,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       el.append(h('div', { class: 'bd-timeline' }, h('em', {}, `0:0${3 + (i % 6)}`),
         h('span', {}, h('i', { style: 'left:18%' }), h('i', { style: 'left:55%' }), h('i', { style: 'left:82%' }), h('b'))));
     }
-    if (t === 'ux') el.append(h('button', { class: 'bd-play', type: 'button', 'aria-label': 'Open case study', tabindex: '-1' }, '▶'));
+    if (t === 'ux') {
+      el.append(h('button', { class: 'bd-play', type: 'button', 'aria-label': 'Open case study', tabindex: '-1' }, '▶'));
+      el.append(h('button', { class: 'bd-open', type: 'button', tabindex: '-1' }, 'Open case study'));
+    }
     under.append(el);
     return el;
   });
@@ -198,7 +203,8 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     FRAMES.findIndex((f) => bx >= f.x + f.dx && bx <= f.x + f.dx + f.w && by >= f.y + f.dy && by <= f.y + f.dy + f.h);
 
   // layers above the homepage: its outline, visitor marks, notes, cursors
-  const heroSel = h('div', { class: 'bd-herosel' }, h('span', { class: 'bd-label' }, h('i'), 'Home'), h('b', {}, 'Open home'));
+  const heroOpen = h('button', { class: 'bd-open', type: 'button', tabindex: '-1' }, 'Open home');
+  const heroSel = h('div', { class: 'bd-herosel' }, h('span', { class: 'bd-label' }, h('i'), 'Home'), h('div', { class: 'bd-sel' }, h('i'), h('i'), h('i'), h('i')), heroOpen);
   const ink = svg('svg', { class: 'bd-ink', viewBox: `0 0 ${BW} ${BH}`, width: BW, height: BH });
   const stampLayer = h('div');
   const noteLayer = h('div');
@@ -253,11 +259,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     stamp: h('div', { class: 'bd-glass bd-tray', role: 'group', 'aria-label': 'Stamps' }),
   };
   const toolsEl = h('div', { class: 'bd-glass bd-tools', role: 'toolbar', 'aria-label': 'Board tools' });
-  const zoomTxt = h('span', {}, '100%');
+  const zoomTxt = h('button', { type: 'button', class: 'pct', 'data-z': 'fit', title: 'Zoom to fit · Shift+1', 'aria-label': 'Zoom to fit' }, '100%');
   const zoomEl = h('div', { class: 'bd-glass bd-zoom' },
     h('button', { type: 'button', 'data-z': '-1', 'aria-label': 'Zoom out' }, '−'), zoomTxt, h('button', { type: 'button', 'data-z': '1', 'aria-label': 'Zoom in' }, '+'));
-  const doneBtn = h('button', { class: 'bd-glass bd-done', type: 'button' }, 'Done', h('kbd', {}, 'Esc'));
-  const right = h('div', { class: 'bd-right' }, doneBtn, zoomEl);
+  const right = h('div', { class: 'bd-right' }, zoomEl);
   const miniSvg = svg('svg', { viewBox: `0 0 ${BW} ${BH}`, preserveAspectRatio: 'xMidYMid meet' });
   const mini = h('div', { class: 'bd-glass bd-mini', role: 'button', tabindex: '0', 'aria-label': 'Minimap: jump there' });
   mini.append(miniSvg);
@@ -290,61 +295,27 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   placeHero();
 
   // ── camera ───────────────────────────────────────────────────────────────
-  type Key = [number, Box];
-  interface Stop { id: string; name: string; s: number }
-  let KEYS: Key[] = [];
-  let STOPS: Stop[] = [];
-  let RAIL_MAX = 0;
-  const heroBox = (): Box => ({ cx: HERO.x + HERO.w / 2, cy: HERO.y + HERO.h / 2, w: HERO.w, h: HERO.h });
-  function buildKeys() {
-    const first = L.first(W / H);
-    KEYS = [[0, heroBox()], [HOME_END, first]];
-    STOPS = [{ id: 'all', name: 'Overview', s: HOME_END }];
-    let at = HOME_END + 160;
-    KEYS.push([at, first]);
-    for (const stop of L.stops) {
-      stop.boxes.forEach((box, i) => {
-        at += i === 0 ? 760 : 560;
-        if (i === 0) STOPS.push({ id: stop.id, name: stop.name, s: at });
-        KEYS.push([at, box]);
-        at += 380;
-        KEYS.push([at, box]);
-      });
-    }
-    at += 800;
-    KEYS.push([at, OVER]);
-    RAIL_MAX = at;
-  }
-  buildKeys();
-  function boxAt(s: number): Box {
-    let i = 0;
-    while (i < KEYS.length - 2 && s > KEYS[i + 1][0]) i++;
-    const [s0, a] = KEYS[i];
-    const [s1, b] = KEYS[i + 1];
-    const t = ease(clamp((s - s0) / Math.max(1e-6, s1 - s0), 0, 1));
-    return { cx: lerp(a.cx, b.cx, t), cy: lerp(a.cy, b.cy, t), w: Math.exp(lerp(Math.log(a.w), Math.log(b.w), t)), h: Math.exp(lerp(Math.log(a.h), Math.log(b.h), t)) };
-  }
+  // Two places: the homepage (the camera rests exactly on its frame) and the canvas (free pan and
+  // zoom). Going from one to the other is always one flight, set off by a slight scroll or zoom.
   const fitZ = (b: { w: number; h: number }) => Math.min(W / b.w, H / b.h);
   const homeCam = (): Cam => ({ cx: HERO.x + HERO.w / 2, cy: HERO.y + HERO.h / 2, z: W / HERO.w });
+  const camFor = (b: Box): Cam => ({ cx: b.cx, cy: b.cy, z: clamp(fitZ(b), ZMIN, ZMAX) });
   const mixCam = (a: Cam, b: Cam, t: number): Cam => ({ cx: lerp(a.cx, b.cx, t), cy: lerp(a.cy, b.cy, t), z: Math.exp(lerp(Math.log(a.z), Math.log(b.z), t)) });
+  /** Eases in gently, spends most of the time settling. */
+  const glide = (t: number) => ease(1 - Math.pow(1 - t, 1.7));
 
   const cam: Cam = homeCam(); // what's on screen
-  let mode: 'story' | 'explore' = 'story';
-  let rail = 0; // story position (eased)
-  let railT = 0; // story position (target)
-  let railRate = 12;
-  let lastDir = 1;
-  let lastInput = -1e9;
-  let holding = false; // a finger is driving the rail
-  let free: Cam | null = null; // explore camera
-  const story = { px: 0, py: 0 }; // temporary story pan (px)
-  let focus: { i: number; t: number } | null = null; // story "zoom to frame"
-  let tween: { from: Cam; to: Cam; t0: number; ms: number } | null = null; // explore flight
-  let hand: { from: Cam; t0: number; ms: number } | null = null; // blend into the story camera
+  const free: Cam = camFor(L.first(W / H)); // where the canvas camera is
+  let place: 'home' | 'canvas' = 'home';
+  let flight: { from: Cam; to: Cam; t0: number; ms: number; kind: 'out' | 'home' | 'canvas' } | null = null;
   let follow = -1;
   let atHome = true;
   let glActive = true;
   let cover = 1;
+  let holding = false; // a finger that started on the homepage is still down
+  let fresh = false; // just arrived from the homepage and haven't moved yet: scrolling back up returns
+  let wheelLock = false; // swallow the rest of the scroll gesture that started a flight
+  let selected: number | 'home' | null = null;
 
   const toBoard = (sx: number, sy: number) => ({ x: (sx - W / 2) / cam.z + cam.cx, y: (sy - H / 2) / cam.z + cam.cy });
   const inHero = (p: { x: number; y: number }) => p.x >= HERO.x && p.x <= HERO.x + HERO.w && p.y >= HERO.y && p.y <= HERO.y + HERO.h;
@@ -352,82 +323,71 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     const f = FRAMES[i];
     return { cx: f.x + f.dx + f.w / 2, cy: f.y + f.dy + f.h / 2, w: f.w * pad, h: f.h * pad };
   };
+  /** How much of the viewport the homepage frame covers under camera `c` (1 = all of it). */
+  const coverOf = (c: Cam) => {
+    const hx = W / 2 + (HERO.x - c.cx) * c.z, hy = H / 2 + (HERO.y - c.cy) * c.z;
+    const ix = Math.max(0, Math.min(W, hx + HERO.w * c.z) - Math.max(0, hx)), iy = Math.max(0, Math.min(H, hy + HERO.h * c.z) - Math.max(0, hy));
+    return (ix * iy) / (W * H);
+  };
+  /** In a flight to or from the homepage: input waits until it lands. */
+  const busy = () => !!flight && flight.kind !== 'canvas';
+
+  function select(next: number | 'home' | null) {
+    if (next === selected) return;
+    if (typeof selected === 'number') frameEls[selected].classList.remove('is-selected');
+    selected = next;
+    if (typeof next === 'number') frameEls[next].classList.add('is-selected');
+    app.classList.toggle('is-hero-selected', next === 'home');
+  }
+
+  /** Homepage → canvas. */
+  function flyOut(ms = 1000) {
+    if (place !== 'home' || flight) return;
+    const to = camFor(L.first(W / H));
+    Object.assign(free, to);
+    flight = { from: homeCam(), to, t0: performance.now(), ms, kind: 'out' };
+    place = 'canvas';
+    // you came from Home, so it is the selection: scroll back up (or zoom in) and you return
+    select('home');
+    fresh = true;
+    wheelLock = true;
+  }
+  /** Canvas → homepage. */
+  function flyHome(ms = 950) {
+    if (place === 'home' || busy()) return;
+    flight = { from: { ...cam }, to: homeCam(), t0: performance.now(), ms, kind: 'home' };
+    follow = -1;
+    wheelLock = true;
+    gesture = null;
+    app.classList.remove('is-dragging');
+  }
+  /** An explicit jump on the canvas (nav chips, minimap, zoom to fit). */
+  function flyTo(box: Box, ms = 700) {
+    if (place !== 'canvas' || busy()) return;
+    fresh = false;
+    follow = -1;
+    flight = { from: { ...cam }, to: camFor(box), t0: performance.now(), ms, kind: 'canvas' };
+  }
+  /** The visitor took the camera: any jump in progress stops where it is. */
+  function touched() {
+    fresh = false;
+    follow = -1;
+    if (flight?.kind === 'canvas') flight = null;
+  }
+  function panBy(dx: number, dy: number) {
+    touched();
+    free.cx += dx / free.z;
+    free.cy += dy / free.z;
+  }
   function zoomAt(sx: number, sy: number, f: number) {
-    if (!free) return;
+    touched();
     const bx = (sx - W / 2) / free.z + free.cx, by = (sy - H / 2) / free.z + free.cy;
     free.z = clamp(free.z * f, ZMIN, ZMAX);
     free.cx = bx - (sx - W / 2) / free.z;
     free.cy = by - (sy - H / 2) / free.z;
-    tween = null;
-    follow = -1;
+    // zoomed in until the homepage nearly fills the view: finish the move
+    if (f > 1 && coverOf(free) > 0.8) flyHome(600);
   }
-  function flyTo(box: Box, ms = 700) {
-    if (!free) return;
-    tween = { from: { ...free }, to: { cx: box.cx, cy: box.cy, z: clamp(fitZ(box), ZMIN, ZMAX) }, t0: performance.now(), ms };
-  }
-
-  /** Move along the story rail by a scroll amount. */
-  function railBy(d: number) {
-    if (!d) return;
-    stopTour();
-    railT = clamp(railT + d, 0, RAIL_MAX);
-    lastDir = Math.sign(d);
-    lastInput = performance.now();
-    railRate = 12;
-    focus = null;
-    story.px *= 0.85;
-    story.py *= 0.85;
-  }
-  /** Fly the story camera straight to a rail position (no whip through the stops in between). */
-  function flyRail(s: number, ms = 900) {
-    stopTour();
-    if (mode === 'explore') leaveExplore();
-    hand = { from: { ...cam }, t0: performance.now(), ms };
-    rail = railT = clamp(s, 0, RAIL_MAX);
-    focus = null;
-    story.px = story.py = 0;
-    lastInput = -1e9;
-  }
-  const goHome = () => flyRail(0, 850);
-  const stopIndex = () => {
-    let best = -1;
-    STOPS.forEach((st, i) => {
-      if (rail >= st.s - 300) best = i;
-    });
-    if (rail > RAIL_MAX - 300) best = 0;
-    return rail < HOME_END * 0.5 ? -1 : best;
-  };
-
-  // ── modes ────────────────────────────────────────────────────────────────
-  function enterExplore(reason?: string) {
-    if (mode === 'explore') return;
-    stopTour();
-    mode = 'explore';
-    free = { ...cam };
-    focus = null;
-    hand = null;
-    app.classList.add('is-explore');
-    toast(reason ?? 'Exploring · scroll pans · ⌘/Ctrl + scroll or pinch zooms');
-    renderTools();
-  }
-  function leaveExplore() {
-    mode = 'story';
-    follow = -1;
-    free = null;
-    tween = null;
-    story.px = story.py = 0;
-    app.classList.remove('is-explore');
-    if (tool !== 'hand') setTool('hand', true);
-    renderTools();
-  }
-  function exitExplore() {
-    if (mode !== 'explore') return;
-    const from = { ...cam };
-    leaveExplore();
-    hand = { from, t0: performance.now(), ms: 700 };
-    if (railT < HOME_END) rail = railT = HOME_END;
-  }
-  on(doneBtn, 'click', exitExplore);
 
   // ── tools ────────────────────────────────────────────────────────────────
   let tool: Tool = 'hand';
@@ -438,29 +398,25 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   function setTool(t: Tool, quiet = false) {
     tool = t;
     app.dataset.tool = t;
-    if (!quiet && t !== 'hand') {
-      enterExplore(
-        t === 'marker' ? 'Marker · draw anywhere. It stays in your browser.'
-        : t === 'stamp' ? 'Stamps · click the work you like'
-        : t === 'note' ? 'Sticky notes · click to leave one'
-        : 'Move · drag frames around. Tidy up puts them back.');
-    }
     ghost.innerHTML = STAMPS[stampKind];
     renderTools();
+    if (quiet || t === 'hand') return;
+    toast(
+      t === 'marker' ? 'Marker · draw anywhere. It stays in your browser.'
+      : t === 'stamp' ? 'Stamps · click the work you like'
+      : t === 'note' ? 'Sticky notes · click to leave one'
+      : 'Move · drag frames around. Tidy up puts them back.');
   }
   function renderTools() {
     const moved = FRAMES.some((f) => f.dx || f.dy);
-    const btn = (id: string, label: string, key: string, extra = '') => {
+    const btn = (id: string, label: string, key: string) => {
       const pressed = (TOOLS as string[]).includes(id) ? tool === id : id === 'comments' ? comments : false;
-      return `<button type="button" class="bd-tool ${extra}" data-act="${id}" aria-label="${label}" title="${label}${key ? ` · ${key}` : ''}" aria-pressed="${pressed}">${ICON[id]}</button>`;
+      return `<button type="button" class="bd-tool" data-act="${id}" aria-label="${label}" title="${label}${key ? ` · ${key}` : ''}" aria-pressed="${pressed}">${ICON[id]}</button>`;
     };
     toolsEl.innerHTML =
       btn('hand', 'Hand', 'H') + btn('move', 'Move frames', 'V') + '<hr>' +
       btn('marker', 'Marker', 'P') + btn('stamp', 'Stamp', 'S') + btn('note', 'Sticky note', 'N') + btn('comments', 'Designer’s notes', 'C') + '<hr>' +
-      btn('undo', 'Undo', '⌘Z') + (moved ? btn('tidy', 'Tidy up', '') : '') + (history.length ? btn('clear', 'Clear my marks', '') : '') +
-      (mode === 'story'
-        ? `<hr><button type="button" class="bd-tool is-wide" data-act="tour" title="Play the tour">${ICON.tour}<span>Tour</span></button><button type="button" class="bd-tool is-wide is-primary" data-act="explore" title="Explore the board · E">${ICON.explore}<span>Explore</span></button>`
-        : '');
+      btn('undo', 'Undo', '⌘Z') + (moved ? btn('tidy', 'Tidy up', '') : '') + (history.length ? btn('clear', 'Clear my marks', '') : '');
     trays.marker.classList.toggle('is-on', tool === 'marker');
     trays.stamp.classList.toggle('is-on', tool === 'stamp');
   }
@@ -501,25 +457,19 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     else if (a === 'undo') undo();
     else if (a === 'tidy') tidyUp();
     else if (a === 'clear') clearMarks();
-    else if (a === 'explore') enterExplore();
-    else if (a === 'tour') playTour();
   });
 
-  // nav: Home + the stops of the story
-  let navAt = -2;
-  function renderNav() {
-    const cur = mode === 'explore' ? -2 : stopIndex();
-    if (cur === navAt) return;
-    navAt = cur;
-    nav.innerHTML =
-      `<button type="button" class="is-home" data-stop="home" title="Back to the homepage · Esc">${ICON.home}<span>Home</span></button><hr>` +
-      STOPS.map((s, i) => `<button type="button" data-stop="${i}" aria-current="${i === cur}">${s.name}</button>`).join('');
-  }
+  // nav: Home, and jumps to the whole board or one section (explicit, like "zoom to fit")
+  nav.innerHTML =
+    `<button type="button" class="is-home" data-go="home" title="Back to the homepage">${ICON.home}<span>Home</span></button><hr>` +
+    `<button type="button" data-go="all" title="Zoom to fit · Shift+1">Overview</button>` +
+    L.stops.map((st, i) => `<button type="button" data-go="${i}">${st.name}</button>`).join('');
   on(nav, 'click', (e: MouseEvent) => {
-    const s = btnOf(e)?.dataset.stop;
-    if (s == null) return;
-    if (s === 'home') goHome();
-    else flyRail(STOPS[+s].s);
+    const go = btnOf(e)?.dataset.go;
+    if (go == null) return;
+    if (go === 'home') flyHome();
+    else if (go === 'all') flyTo(OVER);
+    else flyTo(L.stops[+go].boxes[0]);
   });
 
   // ── visitor marks: strokes, stamps, notes, frame moves (persisted, undoable) ──
@@ -758,92 +708,57 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   }
 
   function startFollow(i: number) {
-    enterExplore(`Following ${CURSORS[i].name} · Esc to stop`);
+    if (place !== 'canvas' || busy()) return;
+    touched();
     follow = i;
-    if (free) free.z = clamp(fitZ({ w: 1400, h: 1000 }), ZMIN, ZMAX);
+    free.z = clamp(fitZ({ w: 1400, h: 1000 }), ZMIN, ZMAX);
     toast(`Following ${CURSORS[i].name} · Esc to stop`, 4000);
   }
 
-  // tour: the story plays by itself until any input
-  let touring = false;
-  function playTour() {
-    if (mode === 'explore') leaveExplore();
-    if (railT > RAIL_MAX - 200) flyRail(HOME_END, 700);
-    touring = true;
-    toast('Touring the board · any input stops it');
-  }
-  function stopTour() {
-    touring = false;
-  }
+  // ── case studies ─────────────────────────────────────────────────────────
+  const cases = createCaseStudies({
+    // a case study opened by address shouldn't strand the visitor on the homepage behind it
+    onChange: (open) => {
+      if (open && place === 'home' && !flight) place = 'canvas';
+    },
+    sourceOf: (work) => frameEls[FRAMES.findIndex((f) => f.work === work)]?.querySelector<HTMLElement>('.bd-media') ?? null,
+  });
+  const openCase = (i: number) => cases.open(FRAMES[i].work, frameEls[i].querySelector<HTMLElement>('.bd-media'));
 
-  // ── pointer input (board) ────────────────────────────────────────────────
+  // ── pointer input (canvas) ───────────────────────────────────────────────
   const ptrs = new Map<number, { x: number; y: number }>();
   let gesture: Gesture | null = null;
-  const TOUCH_K = () => Math.max(1.7, HOME_END / (0.42 * H));
-  const swipe = { y0: 0, rail0: 0, lastY: 0, lastT: 0, v: 0 };
-  function swipeStart(y: number) {
-    stopTour();
-    swipe.y0 = swipe.lastY = y;
-    swipe.rail0 = railT;
-    swipe.lastT = performance.now();
-    swipe.v = 0;
-    holding = true;
-  }
-  function swipeMove(y: number) {
-    const now = performance.now();
-    const dt = Math.max(1, now - swipe.lastT);
-    swipe.v = lerp(swipe.v, ((swipe.lastY - y) / dt) * 1000, 0.5);
-    swipe.lastY = y;
-    swipe.lastT = now;
-    const next = clamp(swipe.rail0 + (swipe.y0 - y) * TOUCH_K(), 0, RAIL_MAX);
-    if (next !== railT) lastDir = Math.sign(next - railT);
-    railT = next;
-    railRate = 30;
-    lastInput = now;
-    focus = null;
-  }
-  function swipeEnd() {
-    if (!holding) return;
-    holding = false;
-    const now = performance.now();
-    const v = now - swipe.lastT < 120 ? swipe.v : 0;
-    if (Math.abs(v) > 60) {
-      railT = clamp(railT + v * TOUCH_K() * 0.22, 0, RAIL_MAX);
-      lastDir = Math.sign(v);
-    }
-    railRate = 7;
-    lastInput = now;
-  }
+  let lastTap = { t: 0, key: '' };
 
   on(app, 'pointerdown', (e: PointerEvent) => {
-    if (atHome) return;
+    if (place !== 'canvas' || busy()) return;
     const target = e.target as Element;
-    if (target.closest('.bd-glass, .bd-cmt, .bd-sticky, .bd-cursor b, .home, .case')) return;
+    if (target.closest('.bd-glass, .bd-cmt, .bd-sticky, .bd-cursor b, .bd-open, .bd-play, .home, .case')) return;
     if (e.button !== 0) return;
     const sx = e.clientX, sy = e.clientY;
     ptrs.set(e.pointerId, { x: sx, y: sy });
     if (ptrs.size === 2) {
       if (gesture?.kind === 'draw') return;
-      holding = false;
-      enterExplore();
-      if (!free) return;
+      touched();
+      app.classList.remove('is-dragging');
       const [a, b] = [...ptrs.values()];
-      gesture = { kind: 'pinch', d0: Math.hypot(b.x - a.x, b.y - a.y), z0: free.z, m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, c0: { cx: free.cx, cy: free.cy } };
+      const m0 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      gesture = { kind: 'pinch', d0: Math.hypot(b.x - a.x, b.y - a.y), z0: free.z, m0, c0: { cx: free.cx, cy: free.cy }, home: selected === 'home' && inHero(toBoard(m0.x, m0.y)) };
       return;
     }
     if (ptrs.size > 2) return;
-    const touch = e.pointerType === 'touch';
     const p = toBoard(sx, sy);
     const fi = frameAt(p.x, p.y);
-    if (mode === 'explore' && tool === 'marker') {
+    if (tool === 'marker') {
       const s: Stroke = { c: color, pts: [[Math.round(p.x), Math.round(p.y)]] };
       drawStroke(s);
       gesture = { kind: 'draw', s };
-    } else if (mode === 'explore' && tool === 'move' && fi >= 0) {
+    } else if (tool === 'move' && fi >= 0) {
+      select(fi);
       gesture = { kind: 'move', i: fi, start: p, dx0: FRAMES[fi].dx, dy0: FRAMES[fi].dy, moved: false };
       frameEls[fi].classList.add('is-dragged');
     } else {
-      gesture = { kind: 'pan', x: sx, y: sy, moved: false, touch, fi, startCam: free ? { ...free } : null, sp: { ...story }, rail: false };
+      gesture = { kind: 'pan', x: sx, y: sy, moved: false, touch: e.pointerType === 'touch', fi, startCam: { ...free } };
     }
     try {
       app.setPointerCapture(e.pointerId);
@@ -852,7 +767,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     }
   });
   on(app, 'pointermove', (e: PointerEvent) => {
-    if (atHome) return;
+    if (place !== 'canvas') return;
     const sx = e.clientX, sy = e.clientY;
     const target = e.target as Element;
     if (e.pointerType === 'mouse') {
@@ -861,7 +776,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       youTag.classList.toggle('is-on', !onHud);
       ghost.style.transform = `translate(${sx}px, ${sy}px)`;
       ghost.classList.toggle('is-on', !onHud);
-      app.classList.toggle('is-hero-hover', !onHud && !gesture && (tool === 'hand' || tool === 'move') && inHero(toBoard(sx, sy)));
+      app.classList.toggle('is-hero-hover', !onHud && !gesture && !busy() && (tool === 'hand' || tool === 'move') && inHero(toBoard(sx, sy)));
       const f3 = target.closest?.<HTMLElement>('.bd-frame.is-3d') ?? null;
       frameEls.forEach((el) => {
         if (el !== f3 && el.style.getPropertyValue('--tx')) {
@@ -878,17 +793,20 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     if (!ptrs.has(e.pointerId)) return;
     ptrs.set(e.pointerId, { x: sx, y: sy });
     const g = gesture;
-    if (!g) return;
+    if (!g || busy()) return;
     if (g.kind === 'pinch') {
-      if (ptrs.size < 2 || !free) return;
+      if (ptrs.size < 2) return;
       const [a, b] = [...ptrs.values()];
       const d = Math.hypot(b.x - a.x, b.y - a.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      free.z = clamp(g.z0 * (d / Math.max(1, g.d0)), ZMIN, ZMAX);
+      const ratio = d / Math.max(1, g.d0);
+      // Home is selected and the fingers spread over it: that's "zoom into the homepage"
+      if (g.home && ratio > 1.08) return flyHome();
+      touched();
+      free.z = clamp(g.z0 * ratio, ZMIN, ZMAX);
       const bx = (g.m0.x - W / 2) / g.z0 + g.c0.cx, by = (g.m0.y - H / 2) / g.z0 + g.c0.cy;
       free.cx = bx - (m.x - W / 2) / free.z;
       free.cy = by - (m.y - H / 2) / free.z;
-      tween = null;
-      follow = -1;
+      if (ratio > 1 && coverOf(free) > 0.8) flyHome(600);
     } else if (g.kind === 'draw') {
       const p = toBoard(sx, sy), pts = g.s.pts, l = pts[pts.length - 1];
       if (Math.hypot(p.x - l[0], p.y - l[1]) > 3 / cam.z) {
@@ -903,27 +821,19 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       placeFrame(g.i);
     } else {
       const dx = sx - g.x, dy = sy - g.y;
+      // just arrived from the homepage (touch): pulling back down returns to it, like scrolling back up
+      if (g.touch && fresh && selected === 'home' && dy > 0 && Math.abs(dy) > Math.abs(dx)) {
+        if (dy > IN_T) flyHome();
+        return;
+      }
       if (!g.moved && Math.hypot(dx, dy) > 5) {
         g.moved = true;
-        // story + touch: a vertical swipe scrolls the story, like a page
-        if (g.touch && mode === 'story' && Math.abs(dy) > Math.abs(dx)) {
-          g.rail = true;
-          swipeStart(g.y);
-        } else app.classList.add('is-dragging');
+        app.classList.add('is-dragging');
       }
       if (!g.moved) return;
-      if (g.rail) swipeMove(sy);
-      else if (mode === 'explore' && free && g.startCam) {
-        free.cx = g.startCam.cx - dx / free.z;
-        free.cy = g.startCam.cy - dy / free.z;
-        tween = null;
-        follow = -1;
-      } else {
-        stopTour();
-        story.px = g.sp.px + dx;
-        story.py = g.sp.py + dy;
-        focus = null;
-      }
+      touched();
+      free.cx = g.startCam.cx - dx / free.z;
+      free.cy = g.startCam.cy - dy / free.z;
     }
   });
   const endPtr = (e: PointerEvent) => {
@@ -950,8 +860,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
         save();
         renderTools();
       }
-    } else if (g.rail) swipeEnd();
-    else if (!g.moved && e.type === 'pointerup') tap(e.clientX, e.clientY, g.fi);
+    } else if (!g.moved && e.type === 'pointerup') tap(e.clientX, e.clientY, g.fi);
   };
   on(app, 'pointerup', endPtr);
   on(app, 'pointercancel', endPtr);
@@ -962,111 +871,122 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     app.classList.remove('is-hero-hover');
   });
 
-  const cases = createCaseStudies({
-    // a case study opened by address shouldn't strand the visitor on the homepage behind it
-    onChange: (open) => {
-      if (open && atHome) rail = railT = HOME_END;
-    },
-    sourceOf: (work) => frameEls[FRAMES.findIndex((f) => f.work === work)]?.querySelector<HTMLElement>('.bd-media') ?? null,
-  });
-  const openCase = (i: number) => cases.open(FRAMES[i].work, frameEls[i].querySelector<HTMLElement>('.bd-media'));
-
+  /** A click selects, like on any canvas. It never moves the camera. Double-click opens (Home, case studies). */
   function tap(sx: number, sy: number, fi: number) {
     const p = toBoard(sx, sy);
-    if (mode === 'explore' && tool === 'stamp') return placeStamp(p.x, p.y);
-    if (mode === 'explore' && tool === 'note') return placeNote(p.x, p.y);
-    if (inHero(p)) return goHome();
-    if (fi < 0) return;
-    if (FRAMES[fi].work.type === 'ux') return openCase(fi);
-    if (mode === 'explore') flyTo(frameBox(fi), 650);
-    else {
-      stopTour();
-      focus = focus && focus.i === fi ? null : { i: fi, t: 0 };
-      story.px = story.py = 0;
-    }
+    if (tool === 'stamp') return placeStamp(p.x, p.y);
+    if (tool === 'note') return placeNote(p.x, p.y);
+    const now = performance.now();
+    const key = inHero(p) ? 'home' : fi >= 0 ? String(fi) : '';
+    const twice = key !== '' && lastTap.key === key && now - lastTap.t < 380;
+    lastTap = { t: twice ? 0 : now, key };
+    if (key === 'home') {
+      select('home');
+      if (twice) flyHome();
+    } else if (fi >= 0) {
+      select(fi);
+      if (twice && FRAMES[fi].work.type === 'ux') openCase(fi);
+    } else select(null);
   }
   frameEls.forEach((el, i) =>
     on(el, 'keydown', (e: KeyboardEvent) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
       e.stopPropagation();
-      if (FRAMES[i].work.type === 'ux') openCase(i);
-      else if (mode === 'explore') flyTo(frameBox(i), 650);
-      else focus = { i, t: 0 };
+      select(i);
+      if (e.key === 'Enter' && FRAMES[i].work.type === 'ux') openCase(i);
     }),
   );
+  // the explicit buttons: ▶ and "Open case study" on product frames, "Open home" on the Home frame
+  on(stage, 'click', (e: MouseEvent) => {
+    const b = (e.target as Element).closest('.bd-play, .bd-open');
+    const f = b?.closest<HTMLElement>('.bd-frame');
+    if (f?.dataset.i != null) openCase(+f.dataset.i);
+  });
+  on(heroOpen, 'click', () => flyHome());
 
-  // wheel: at home and in the story it scrolls the rail; exploring, it pans (⌘/Ctrl or pinch zooms)
+  // wheel. Homepage: a slight scroll flies out. Canvas: scroll pans, ⌘/Ctrl + scroll (or a trackpad pinch) zooms.
+  let wheelAcc = 0;
+  let lastWheel = 0;
   on(app, 'wheel', (e: WheelEvent) => {
     if (cases.isOpen()) return;
-    const target = e.target as Element;
     if (e.defaultPrevented) return; // a toy on the homepage took it
+    const target = e.target as Element;
+    const now = performance.now();
+    const gap = now - lastWheel;
+    lastWheel = now;
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? H : 1;
+    const dx = e.deltaX * unit, dy = e.deltaY * unit;
     const zoomGesture = e.ctrlKey || e.metaKey;
-    if (atHome) {
-      if (target.closest('.ui')) return;
+    if (gap > 240) wheelAcc = 0;
+    if (place === 'home' && !flight) {
+      // the island's open panel scrolls by itself; everywhere else a scroll belongs to the page
+      if (target.closest('.ui-island[data-open], .ui-rail')) return;
       e.preventDefault();
-      railBy(e.deltaY * unit * (zoomGesture ? 4 : 1));
+      if (wheelLock && gap < 140) return;
+      wheelLock = false;
+      wheelAcc = Math.max(0, wheelAcc + dy);
+      if (wheelAcc > OUT_T) {
+        wheelAcc = 0;
+        flyOut();
+      }
       return;
     }
     if (target.closest('.bd-glass, .bd-sticky')) return;
     e.preventDefault();
-    if (mode === 'story' && !zoomGesture) {
-      railBy(e.deltaY * unit);
+    if (busy()) return;
+    // the tail of the scroll that started a flight (trackpad momentum) must not shove the canvas
+    if (wheelLock && gap < 140) return;
+    wheelLock = false;
+    // Home selected: a slight zoom in over it — or, right after arriving, a scroll back up — flies in
+    if (selected === 'home' && dy < 0 && (zoomGesture ? inHero(toBoard(e.clientX, e.clientY)) : fresh)) {
+      wheelAcc = Math.min(0, wheelAcc + dy);
+      if (wheelAcc < -IN_T) {
+        wheelAcc = 0;
+        flyHome();
+      }
       return;
     }
-    if (mode === 'story') enterExplore();
-    if (!free) return;
-    if (zoomGesture) zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * unit * 0.0045));
-    else {
-      free.cx += (e.deltaX * unit) / free.z;
-      free.cy += (e.deltaY * unit) / free.z;
-      tween = null;
-      follow = -1;
-    }
+    if (zoomGesture) zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.0045));
+    else panBy(dx, dy);
   }, { passive: false });
 
+  const zoomStep = (f: number) => {
+    if (place !== 'canvas' || busy()) return;
+    // zooming in with the Home frame selected goes into the homepage
+    if (f > 1 && selected === 'home') flyHome();
+    else zoomAt(W / 2, H / 2, f);
+  };
   on(zoomEl, 'click', (e: MouseEvent) => {
     const z = btnOf(e)?.dataset.z;
-    if (!z) return;
-    enterExplore();
-    zoomAt(W / 2, H / 2, z === '1' ? 1.4 : 1 / 1.4);
+    if (z === 'fit') flyTo(OVER);
+    else if (z) zoomStep(z === '1' ? 1.4 : 1 / 1.4);
   });
   on(mini, 'click', (e: MouseEvent) => {
     const r = miniSvg.getBoundingClientRect();
     const s = Math.min(r.width / BW, r.height / BH);
     const bx = (e.clientX - r.left - (r.width - BW * s) / 2) / s, by = (e.clientY - r.top - (r.height - BH * s) / 2) / s;
-    enterExplore();
-    if (free) flyTo({ cx: clamp(bx, 0, BW), cy: clamp(by, 0, BH), w: W / free.z, h: H / free.z }, 500);
+    flyTo({ cx: clamp(bx, 0, BW), cy: clamp(by, 0, BH), w: W / free.z, h: H / free.z }, 500);
   });
 
-  // gestures on the empty part of the homepage
+  // gestures on the empty part of the homepage: a short swipe up, or a pinch in, flies out
+  let swipeY = 0;
   homeGestures.drag = (phase: GesturePhase, _x: number, y: number, pointerType: string) => {
     if (pointerType === 'mouse') return;
-    if (phase === 'start') swipeStart(y);
-    else if (phase === 'move') {
-      if (holding && (railT > 0 || swipe.y0 - y > 8)) swipeMove(y);
-    } else swipeEnd();
-  };
-  let pinch0 = 0;
-  homeGestures.pinch = (phase: GesturePhase, ratio: number) => {
     if (phase === 'start') {
-      pinch0 = railT;
+      swipeY = y;
       holding = true;
     } else if (phase === 'move') {
-      const span = Math.log((W / HERO.w) / fitZ(KEYS[1][1]));
-      const next = clamp(pinch0 + (HOME_END * -Math.log(Math.max(0.05, ratio))) / Math.max(0.2, span), 0, HOME_END);
-      if (next !== railT) lastDir = Math.sign(next - railT);
-      railT = next;
-      railRate = 30;
-      lastInput = performance.now();
-    } else {
-      holding = false;
-      railRate = 7;
-      lastInput = performance.now();
-    }
+      if (holding && swipeY - y > OUT_T) flyOut();
+    } else holding = false;
   };
-  homeGestures.openBoard = () => flyRail(HOME_END, 950);
+  homeGestures.pinch = (phase: GesturePhase, ratio: number) => {
+    if (phase === 'start') holding = true;
+    else if (phase === 'move') {
+      if (ratio < 0.9) flyOut();
+    } else holding = false;
+  };
+  homeGestures.openBoard = () => flyOut();
 
   // keyboard
   on(window, 'keydown', (e: KeyboardEvent) => {
@@ -1077,21 +997,22 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       return;
     }
     const k = e.key.toLowerCase();
-    if (atHome) {
-      if (host.hasSelection() || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (place === 'home') {
+      if (flight || host.hasSelection() || e.metaKey || e.ctrlKey || e.altKey) return;
       if ((e.target as Element | null)?.closest?.('.ui')) return;
       if (k === 'pagedown' || k === 'arrowdown' || k === 'end') {
         e.preventDefault();
-        flyRail(HOME_END, 950);
+        flyOut();
       }
       return;
     }
+    if (busy()) return;
     if (k === 'escape') {
       if (follow >= 0) {
         follow = -1;
         toast('Stopped following');
-      } else if (mode === 'explore') exitExplore();
-      else goHome();
+      } else if (tool !== 'hand') setTool('hand');
+      else select(null);
       return;
     }
     if ((e.metaKey || e.ctrlKey) && k === 'z') {
@@ -1100,40 +1021,29 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (k === 'home') return goHome();
-    if (e.shiftKey && e.key === '!') {
-      enterExplore();
-      flyTo(OVER, 600);
+    if (k === 'home') return flyHome();
+    if (k === 'enter') {
+      if (selected === 'home') flyHome();
+      else if (typeof selected === 'number' && FRAMES[selected].work.type === 'ux') openCase(selected);
+      return;
+    }
+    if (e.shiftKey && (e.key === '!' || e.code === 'Digit1')) return flyTo(OVER, 600);
+    if (e.shiftKey && (e.key === '@' || e.code === 'Digit2')) {
+      if (selected === 'home') flyHome();
+      else if (typeof selected === 'number') flyTo(frameBox(selected), 600);
       return;
     }
     const map: Record<string, Tool> = { h: 'hand', v: 'move', p: 'marker', m: 'marker', s: 'stamp', n: 'note' };
     if (map[k]) return setTool(map[k]);
     if (k === 'c') return toggleComments();
-    if (k === 'e') return mode === 'explore' ? exitExplore() : enterExplore();
-    if (mode === 'story') {
-      const i = stopIndex();
-      if (k === 'arrowdown' || k === 'pagedown' || k === 'arrowright') {
-        e.preventDefault();
-        if (i < STOPS.length - 1) flyRail(STOPS[i + 1].s);
-      } else if (k === 'arrowup' || k === 'pageup' || k === 'arrowleft') {
-        e.preventDefault();
-        if (i <= 0) goHome();
-        else flyRail(STOPS[i - 1].s);
-      }
-      return;
-    }
-    if (!free) return;
-    if (k === '=' || k === '+') zoomAt(W / 2, H / 2, 1.3);
-    else if (k === '-') zoomAt(W / 2, H / 2, 1 / 1.3);
+    if (k === '=' || k === '+') zoomStep(1.3);
+    else if (k === '-') zoomStep(1 / 1.3);
     else if (k === '0') zoomAt(W / 2, H / 2, 1 / free.z);
-    else if (k.startsWith('arrow')) {
-      const d = 80 / free.z;
-      if (k === 'arrowleft') free.cx -= d;
-      if (k === 'arrowright') free.cx += d;
-      if (k === 'arrowup') free.cy -= d;
-      if (k === 'arrowdown') free.cy += d;
-      tween = null;
-    } else return;
+    else if (k === 'arrowleft') panBy(-80, 0);
+    else if (k === 'arrowright') panBy(80, 0);
+    else if (k === 'arrowup') panBy(0, -80);
+    else if (k === 'arrowdown') panBy(0, 80);
+    else return;
     e.preventDefault();
   });
 
@@ -1142,10 +1052,6 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     H = Math.max(1, app.clientHeight);
     layoutHero();
     placeHero();
-    buildKeys();
-    rail = Math.min(rail, RAIL_MAX);
-    railT = Math.min(railT, RAIL_MAX);
-    navAt = -2;
     wasHome = null;
   };
   on(window, 'resize', onResize);
@@ -1163,55 +1069,33 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     last = now;
     const tsec = now / 1000;
 
-    // story rail
-    if (touring) {
-      railT = Math.min(RAIL_MAX, railT + dt * 270);
-      railRate = 12;
-      if (railT >= RAIL_MAX) touring = false;
-    }
-    if (mode === 'story' && !holding && !touring && railT > 0 && railT < HOME_END && now - lastInput > 170) {
-      // never rest half-way between the homepage and the board
-      const f = railT / HOME_END;
-      railT = (lastDir >= 0 ? f > 0.1 : f > 0.9) ? HOME_END : 0;
-      railRate = 6;
-    }
-    rail = Math.abs(railT - rail) < 0.4 ? railT : lerp(rail, railT, 1 - Math.exp(-dt * railRate));
-
-    let target: Cam;
-    if (mode === 'explore' && free) {
-      if (tween) {
-        const t = ease(clamp((now - tween.t0) / tween.ms, 0, 1));
-        Object.assign(free, mixCam(tween.from, tween.to, t));
-        if (t >= 1) tween = null;
+    if (flight) {
+      const t = clamp((now - flight.t0) / flight.ms, 0, 1);
+      const c = mixCam(flight.from, flight.kind === 'home' ? homeCam() : flight.to, glide(t));
+      Object.assign(cam, c);
+      if (flight.kind === 'canvas') Object.assign(free, c);
+      if (t >= 1) {
+        if (flight.kind === 'home') {
+          place = 'home';
+          select(null);
+          fresh = false;
+        }
+        flight = null;
       }
+    } else if (place === 'canvas') {
       if (follow >= 0) {
         const c = cursorPos(CURSORS[follow], tsec);
         free.cx = lerp(free.cx, c.x, 1 - Math.exp(-dt * 3));
         free.cy = lerp(free.cy, c.y, 1 - Math.exp(-dt * 3));
       }
-      target = free;
-    } else {
-      let b = boxAt(rail);
-      if (focus) {
-        focus.t = Math.min(1, focus.t + dt * 2.2);
-        const fb = frameBox(focus.i), t = ease(focus.t);
-        b = { cx: lerp(b.cx, fb.cx, t), cy: lerp(b.cy, fb.cy, t), w: Math.exp(lerp(Math.log(b.w), Math.log(fb.w), t)), h: Math.exp(lerp(Math.log(b.h), Math.log(fb.h), t)) };
-      }
-      const z = fitZ(b);
-      target = { cx: b.cx - story.px / z, cy: b.cy - story.py / z, z };
-    }
-    if (hand) {
-      const t = clamp((now - hand.t0) / hand.ms, 0, 1);
-      target = mixCam(hand.from, target, ease(t));
-      if (t >= 1) hand = null;
-    }
-    Object.assign(cam, target);
+      Object.assign(cam, free);
+    } else Object.assign(cam, homeCam());
 
-    // (not while a finger that started on the homepage is still driving the camera: it holds the capture)
+    // (not while a finger that started on the homepage is still down: it holds the pointer capture)
     const inertNow = !atHome && !holding;
     if (home.inert !== inertNow) home.inert = inertNow;
 
-    const nowHome = mode === 'story' && rail === 0 && railT === 0 && !hand && !focus && !story.px && !story.py;
+    const nowHome = place === 'home' && !flight;
     if (nowHome && wasHome === true) return; // resting on the homepage: nothing to draw
 
     const z = cam.z;
@@ -1247,7 +1131,8 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       glActive = gl;
       host.onGlActive(gl);
     }
-    const hudNow = cover < 0.72;
+    // the board's own chrome fades in as the homepage shrinks away, and out as it comes back
+    const hudNow = !nowHome && (busy() ? cover < 0.72 : true);
     if (hudNow !== hudOn) {
       hudOn = hudNow;
       app.classList.toggle('hud-on', hudNow);
@@ -1269,7 +1154,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     vp.setAttribute('width', (W / z).toFixed(0));
     vp.setAttribute('height', (H / z).toFixed(0));
 
-    const draw = mode === 'explore' ? 1 : smoothstep(0.25, 0.9, rail / HOME_END);
+    const draw = 1 - smoothstep(0.2, 0.75, cover);
     linkPaths.forEach((p, i) => (p.style.strokeDashoffset = (linkLen[i] * (1 - draw)).toFixed(1)));
 
     // visitors wander and now and then say something
@@ -1288,15 +1173,13 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       el.style.transform = `translate(${c.x.toFixed(1)}px, ${c.y.toFixed(1)}px) scale(${(1 / z).toFixed(4)})`;
     });
 
-    renderNav();
-    const msg = mode === 'explore'
-      ? (tool === 'marker' ? 'Draw anywhere. <b>⌘Z</b> undoes. Saved in your browser.'
-        : tool === 'stamp' ? 'Click a piece to stamp it.'
-        : tool === 'note' ? 'Click anywhere to leave a note.'
-        : tool === 'move' ? 'Drag frames around. <b>Tidy up</b> puts them back.'
-        : 'Scroll pans · <b>⌘/Ctrl + scroll</b> zooms · <b>Esc</b> returns to the story.')
-      : rail < RAIL_MAX - 500 ? 'Scroll to tour the work · <b>E</b> to explore freely · click <b>Home</b> to go back.'
-      : 'That’s the tour. <b>E</b> to explore, or pick a tool and leave a mark.';
+    const msg =
+      tool === 'marker' ? 'Draw anywhere. <b>⌘Z</b> undoes. Saved in your browser.'
+      : tool === 'stamp' ? 'Click a piece to stamp it.'
+      : tool === 'note' ? 'Click anywhere to leave a note.'
+      : tool === 'move' ? 'Drag frames around. <b>Tidy up</b> puts them back.'
+      : selected === 'home' ? '<b>Home</b> is selected: zoom in (or scroll back up) to open it.'
+      : 'Scroll pans · <b>⌘/Ctrl + scroll</b> zooms · select <b>Home</b> and zoom in to go back.';
     if (tip.dataset.msg !== msg) {
       tip.dataset.msg = msg;
       tip.innerHTML = msg;
@@ -1309,13 +1192,12 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   hud.inert = true;
   load();
   renderTools();
-  renderNav();
-  // deep link: #work lands on the board
-  if (startOnBoard || location.hash === '#work' || cases.isOpen()) rail = railT = HOME_END;
+  // deep link: #work lands on the canvas
+  if (startOnBoard || location.hash === '#work' || cases.isOpen()) place = 'canvas';
   raf = requestAnimationFrame(frame);
 
   return {
-    atHome: () => atHome,
+    atHome: () => place === 'home',
     destroy() {
       cancelAnimationFrame(raf);
       cancelAnimationFrame(confettiRaf);
@@ -1335,7 +1217,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       homeView.x = homeView.y = 0;
       homeView.k = 1;
       homeView.home = true;
-      app.classList.remove('is-explore', 'hud-on', 'show-comments', 'is-dragging', 'is-hero-hover');
+      app.classList.remove('hud-on', 'show-comments', 'is-dragging', 'is-hero-hover', 'is-hero-selected');
       delete app.dataset.view;
       delete app.dataset.tool;
       host.onView('home');

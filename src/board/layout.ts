@@ -110,7 +110,7 @@ function rowsOf(works: Work[], cx: number, y0: number, maxW: number) {
 /** One camera box per screenful of a tall section. */
 function slide(sec: Section, tall: number): Box[] {
   const w = sec.w + 120;
-  const total = sec.h + 190;
+  const total = sec.h + 250;
   const top = sec.y - 100;
   const maxH = w * tall;
   const n = Math.max(1, Math.ceil((total - maxH * 0.12) / (maxH * 0.88)));

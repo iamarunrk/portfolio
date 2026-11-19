@@ -144,9 +144,13 @@ function Controller() {
 }
 
 export function Stage() {
+  const active = useStore((s) => s.glActive);
   return (
     <Canvas
       className="stage"
+      // The board scales this canvas with a CSS transform: measure the layout box, not the scaled one.
+      resize={{ offsetSize: true, scroll: false }}
+      frameloop={active ? 'always' : 'never'}
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: false, powerPreference: 'high-performance', stencil: false }}
       camera={{ fov: CAMERA_FOV, position: [0, 0, CAMERA_Z], near: 0.1, far: 60 }}

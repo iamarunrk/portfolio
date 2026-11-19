@@ -98,10 +98,15 @@ export function createCaseStudies(opts: { onChange(open: boolean): void; sourceO
     from = fromEl ?? opts.sourceOf(work);
     if (navigate) {
       const url = `#/work/${work.id}`;
-      if (wasOpen || replace) history.replaceState(history.state, '', url);
-      else {
-        history.pushState({ caseStudy: true }, '', url);
-        pushed = true;
+      // some embeds refuse history changes: the page still opens, just without its own address
+      try {
+        if (wasOpen || replace) history.replaceState(history.state, '', url);
+        else {
+          history.pushState({ caseStudy: true }, '', url);
+          pushed = true;
+        }
+      } catch {
+        pushed = false;
       }
     }
     fill(work);
@@ -171,7 +176,11 @@ export function createCaseStudies(opts: { onChange(open: boolean): void; sourceO
     if (!current) return;
     if (pushed) history.back();
     else {
-      history.replaceState(history.state, '', location.pathname + location.search);
+      try {
+        history.replaceState(history.state, '', location.pathname + location.search);
+      } catch {
+        /* no address to restore */
+      }
       hide();
     }
   }

@@ -21,11 +21,14 @@ export type GesturePhase = 'start' | 'move' | 'end';
 
 /**
  * Gestures on the empty part of the home canvas (nothing grabbed) are handed to the board:
- * a one-finger swipe or a two-finger pinch pulls the camera back.
+ * a one-finger swipe scrolls the page away, a two-finger pinch zooms the canvas.
  */
 export const homeGestures: {
   drag: ((phase: GesturePhase, x: number, y: number, pointerType: string) => void) | null;
-  pinch: ((phase: GesturePhase, ratio: number) => void) | null;
+  /** `x`, `y`: the point between the two fingers (client px). */
+  pinch: ((phase: GesturePhase, ratio: number, x: number, y: number) => void) | null;
   /** Fly from the homepage out to the board (the "Work" button). */
   openBoard: (() => void) | null;
-} = { drag: null, pinch: null, openBoard: null };
+  /** The camera just landed on the homepage: the rest of that wheel gesture is not for the toys. */
+  wheelQuietUntil: number;
+} = { drag: null, pinch: null, openBoard: null, wheelQuietUntil: 0 };

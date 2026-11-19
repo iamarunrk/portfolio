@@ -27,6 +27,9 @@ const SNAP = THREE.MathUtils.degToRad(15);
 interface PointerInfo {
   x: number;
   y: number;
+  /** Client coordinates (the canvas itself may be scaled by the board camera). */
+  cx: number;
+  cy: number;
   type: string;
 }
 
@@ -335,7 +338,7 @@ export class InteractionController {
   private onDown = (e: PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const [x, y] = this.local(e);
-    this.pointers.set(e.pointerId, { x, y, type: e.pointerType });
+    this.pointers.set(e.pointerId, { x, y, cx: e.clientX, cy: e.clientY, type: e.pointerType });
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -352,8 +355,8 @@ export class InteractionController {
         this.emptyDrag = false;
         this.pendingDeselect = false;
         const [a, b] = [...this.pointers.values()];
-        this.emptyPinch = Math.max(10, Math.hypot(b.x - a.x, b.y - a.y));
-        homeGestures.pinch?.('start', 1);
+        this.emptyPinch = Math.max(10, Math.hypot(b.cx - a.cx, b.cy - a.cy));
+        homeGestures.pinch?.('start', 1, (a.cx + b.cx) / 2, (a.cy + b.cy) / 2);
       }
       return;
     }
@@ -522,6 +525,8 @@ export class InteractionController {
     if (p) {
       p.x = x;
       p.y = y;
+      p.cx = e.clientX;
+      p.cy = e.clientY;
     }
     this.shift = e.shiftKey;
     const f = frameRef.current;
@@ -533,7 +538,7 @@ export class InteractionController {
     }
     if (this.emptyPinch && this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()];
-      homeGestures.pinch?.('move', Math.hypot(b.x - a.x, b.y - a.y) / this.emptyPinch);
+      homeGestures.pinch?.('move', Math.hypot(b.cx - a.cx, b.cy - a.cy) / this.emptyPinch, (a.cx + b.cx) / 2, (a.cy + b.cy) / 2);
       return;
     }
     if (this.pointers.size > 1) return;
@@ -652,7 +657,7 @@ export class InteractionController {
     const st = useStore.getState();
     if (this.emptyPinch) {
       this.emptyPinch = 0;
-      homeGestures.pinch?.('end', 1);
+      homeGestures.pinch?.('end', 1, 0, 0);
       this.moved = true;
     }
     if (this.emptyDrag && this.pointers.size === 0) {
@@ -724,6 +729,12 @@ export class InteractionController {
   }
 
   private onWheel = (e: WheelEvent) => {
+    // The camera just zoomed in onto the homepage: the tail of that gesture must not scale a toy.
+    const now = performance.now();
+    if (now < homeGestures.wheelQuietUntil) {
+      homeGestures.wheelQuietUntil = now + 160;
+      return;
+    }
     const [x, y] = this.local(e);
     let o: LiveObject | null = null;
     const h = this.hitTest(x, y);

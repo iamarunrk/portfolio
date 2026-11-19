@@ -35,21 +35,27 @@ The page is a design board with a camera over it (`src/board/board.ts`). The liv
 real frame on that board: the camera resting on it *is* the homepage, so the zoom between the two is
 one continuous move, not a page change. There is no footer and no second page to scroll.
 
-Leaving the homepage is one scroll-driven move. The page first scrolls up like any page; as you keep
-scrolling, that scroll turns into the camera pulling back, the page tips and settles into its place
-as a frame, and the sections assemble around it. It follows the wheel or the finger in both
-directions, and once clearly started it finishes by itself when you let go (a nudge of less than
-about 60px settles back). Scrolling back up right after arriving plays it in reverse.
+Nothing on the board moves by itself. The camera goes exactly as far as your wheel, pinch or finger
+takes it, and stops where you stop.
 
-After that the board is a plain canvas. Nothing zooms by itself, with one exception: zooming in with
-the **Home** frame selected flies back into the homepage.
+- **Scrolling** on the homepage runs along a fixed path: the page first scrolls up like any page;
+  keep scrolling and that scroll becomes the camera pulling back, the page tips and settles into its
+  place as a frame, and the sections assemble around it. Scroll back up and it plays in reverse.
+  Stop half-way and it stays half-way.
+- **Zooming** (<kbd>⌘/Ctrl</kbd> + scroll, trackpad or touch pinch) is plain canvas zoom at the
+  cursor, from the homepage too.
+- **Getting back in:** zoom in on the selected **Home** frame. The camera steers onto the frame in
+  step with your zoom, so it ends exactly on the homepage. (Home is selected when you arrive.)
+
+The only animated moves are explicit commands: the Work button, the Home chip, **Open home**,
+double-clicking Home, and the jump chips.
 
 | On the board | Desktop | Touch |
 | --- | --- | --- |
 | Pan | scroll, or drag with the hand tool | drag |
 | Zoom | <kbd>⌘/Ctrl</kbd> + scroll, trackpad pinch, <kbd>+</kbd> <kbd>−</kbd>, <kbd>Shift</kbd>+<kbd>1</kbd> to fit | pinch |
 | Select a frame | click it (the camera does not move) | tap it |
-| Back to the homepage | select **Home** and zoom in; or scroll back up right after arriving; or double-click Home, **Open home**, <kbd>Enter</kbd>, the Home chip | select Home and pinch out; or pull down right after arriving; or the Home chip |
+| Back to the homepage | zoom in on the selected **Home** frame; or scroll back up right after arriving; or double-click Home, **Open home**, <kbd>Enter</kbd>, the Home chip | pinch out on the selected Home frame; or pull down right after arriving; or the Home chip |
 | Open a case study (product work) | ▶ on the frame, or select it and **Open case study** / <kbd>Enter</kbd> / double-click | ▶, or select and **Open case study** |
 | Leave a case study | **Board**, <kbd>Esc</kbd>, the back button, or zoom out (<kbd>⌘/Ctrl</kbd> + scroll, pinch) | **Board**, or pinch in |
 | Jump to a section | the chips top-left (Overview, Motion, 3D, Product) or the minimap | the chips |

@@ -1,0 +1,126 @@
+/* ==========================================================================
+   Theme button (board + case pages)
+   One live swatch of the theme beside the board's toolbar; it opens the
+   homepage's remix island. The dock itself must stay free of transforms and
+   filters: the island inside it is position: fixed to the viewport.
+   ========================================================================== */
+
+.th-dock {
+  --th-gap: 10px;
+  position: fixed;
+  z-index: 5;
+  /* the toolbar is nudged right by half of (button + gap) so the pair stays centred */
+  left: calc(50% - var(--bd-tools-w, 296px) / 2 - 29px);
+  bottom: max(14px, env(safe-area-inset-bottom));
+  width: 48px;
+  height: 48px;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.3s ease,
+    visibility 0s linear 0.3s,
+    left 0.55s var(--ui-spring);
+}
+.app.hud-on .th-dock,
+.app.case-in .th-dock {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 0.3s ease,
+    left 0.55s var(--ui-spring);
+}
+/* inside a case study it is the only control at the bottom */
+.app.case-in .th-dock {
+  left: calc(50% - 24px);
+}
+
+.th-btn {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 52%),
+    var(--th-tex, none),
+    var(--th-hud, rgba(26, 26, 30, 0.62));
+  -webkit-backdrop-filter: blur(var(--th-hud-blur, 18px)) saturate(180%);
+  backdrop-filter: blur(var(--th-hud-blur, 18px)) saturate(180%);
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.2),
+    inset 0 1px 1px -0.5px rgba(255, 255, 255, 0.7),
+    0 10px 30px -12px rgba(0, 0, 0, 0.55);
+  transition:
+    opacity 0.2s ease,
+    transform 0.4s var(--ui-spring);
+}
+.th-btn:active {
+  transform: scale(0.93);
+}
+.th-btn__thumb {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: transform 0.4s var(--ui-spring);
+}
+.th-btn__thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+}
+.th-btn__thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  animation: ui-fade 0.3s ease-out;
+}
+.th-btn:hover .th-btn__thumb {
+  transform: rotate(-6deg) scale(1.08);
+}
+.th-dock[data-open] .th-btn {
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none;
+}
+
+/* The board's island: the homepage's controls, frosted (nothing lenses it here). */
+.ui-island.ui-island--board,
+.ui-island.ui-island--board[data-open] {
+  --ui-glass: var(--th-hud-strong, rgba(22, 22, 26, 0.84));
+  --lg-blur: 26px;
+  background:
+    radial-gradient(85% 130% at var(--lg-x, 26%) var(--lg-y, -12%), rgba(255, 255, 255, calc(0.05 + 0.11 * var(--lg-glow, 0))), transparent 62%),
+    linear-gradient(180deg, var(--lg-sheen), transparent 52%),
+    var(--th-tex, none),
+    var(--ui-glass);
+}
+
+/* while the island is up, the board's bottom chrome steps aside */
+.bd-tools,
+.bd-tray,
+.bd-tip {
+  transition: opacity 0.2s ease;
+}
+.app:has(.th-dock[data-open]) :is(.bd-tools, .bd-tray, .bd-tip) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .th-btn,
+  .th-btn__thumb {
+    transition-property: opacity;
+  }
+  .th-btn:hover .th-btn__thumb {
+    transform: none;
+  }
+}

@@ -66,7 +66,7 @@ const GRADIENT_KINDS = new Set<string>(GRADIENT_PRESETS.map((p) => p.base.kind))
 const SHADER_KINDS = new Set<string>(SHADER_PRESETS.map((p) => p.base.kind));
 
 /** Which tab "owns" a base kind (where its palette and sliders live). */
-function tabForKind(kind: BaseLayer['kind']): IslandTab {
+export function tabForKind(kind: BaseLayer['kind']): IslandTab {
   if (kind === 'solid') return 'colors';
   if (GRADIENT_KINDS.has(kind) && !SHADER_KINDS.has(kind)) return 'gradients';
   return 'shaders';
@@ -552,20 +552,37 @@ function DiceButton() {
 /* Island                                                                    */
 /* ------------------------------------------------------------------------ */
 
+export interface IslandProps {
+  /**
+   * 'home' (default): the homepage island, always there, driven by the store, lensed as Liquid Glass.
+   * 'board': the same controls for the board and case pages, summoned by the theme button. It is
+   * controlled (`tab`, `onTab`), exists only while open, and is plain frosted glass (no WebGL behind it).
+   */
+  variant?: 'home' | 'board';
+  tab?: IslandTab | null;
+  onTab?: (tab: IslandTab | null) => void;
+}
+
 /**
  * Bottom-centre "island": a live mini-swatch, five tabs and a dice. A tab opens
  * its panel, which grows upward inside the same glass container. The active
  * tab again, Esc, or a click that starts outside the island collapses it.
  */
-export function Island() {
-  const tab = useStore((s) => s.islandTab);
-  const setTab = useStore((s) => s.setIslandTab);
-  const hidden = useStore((s) => s.uiHidden);
+export function Island({ variant = 'home', tab: tabProp = null, onTab }: IslandProps = {}) {
+  const board = variant === 'board';
+  const storeTab = useStore((s) => s.islandTab);
+  const storeSetTab = useStore((s) => s.setIslandTab);
+  const uiHidden = useStore((s) => s.uiHidden);
+  const tab = board ? tabProp : storeTab;
+  const setTab = board && onTab ? onTab : storeSetTab;
+  const hidden = board ? tab == null : uiHidden;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<IslandTab, HTMLButtonElement | null>>>({});
-  useLiquidGlass(rootRef);
+  // only the homepage has the WebGL background that lenses the glass
+  const unlensed = useRef<HTMLDivElement>(null);
+  useLiquidGlass(board ? unlensed : rootRef);
 
   // Liquid selection: one lime glass capsule that slides (with a squash) to the open tab.
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -664,8 +681,8 @@ export function Island() {
 
   // Hiding the chrome collapses the island.
   useEffect(() => {
-    if (hidden && useStore.getState().islandTab) setTab(null);
-  }, [hidden, setTab]);
+    if (!board && hidden && useStore.getState().islandTab) setTab(null);
+  }, [board, hidden, setTab]);
 
   // Esc / click outside collapse. Only listens while open, never blocks the event.
   useEffect(() => {
@@ -718,7 +735,7 @@ export function Island() {
   return (
     <div
       ref={rootRef}
-      className="ui ui-glass ui-island ui-hideable"
+      className={`ui ui-glass ui-island ui-hideable${board ? ' ui-island--board' : ''}`}
       data-open={tab ? '' : undefined}
       data-hidden={hidden || undefined}
       inert={hidden}

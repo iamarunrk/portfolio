@@ -4,6 +4,36 @@
    camera out to the board, which is a plain free canvas (pan, zoom, select,
    marker, stamps, notes). Zooming in with Home selected flies back.
    ========================================================================== */
+/* Theme echo (src/theme): the homepage background, repeated very quietly on the board and the
+   case-study pages. Registered so a theme change glides instead of snapping. */
+@property --th-floor { syntax: '<color>'; inherits: true; initial-value: #101012; }
+@property --th-dot { syntax: '<color>'; inherits: true; initial-value: rgba(251, 250, 247, 0.11); }
+@property --th-sec { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.028); }
+@property --th-sec-line { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.1); }
+@property --th-g1 { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0); }
+@property --th-g2 { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0); }
+@property --th-g3 { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0); }
+@property --th-vig { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0); }
+@property --th-hud { syntax: '<color>'; inherits: true; initial-value: rgba(26, 26, 30, 0.62); }
+@property --th-hud-strong { syntax: '<color>'; inherits: true; initial-value: rgba(22, 22, 26, 0.84); }
+@property --th-paper { syntax: '<color>'; inherits: true; initial-value: #f4efe6; }
+@property --th-paper-line { syntax: '<color>'; inherits: true; initial-value: #ddd5c7; }
+@property --th-paper-chip { syntax: '<color>'; inherits: true; initial-value: #ffffff; }
+@property --th-paper-muted { syntax: '<color>'; inherits: true; initial-value: #6b6458; }
+@property --th-accent { syntax: '<color>'; inherits: true; initial-value: #6b6458; }
+@property --th-accent-soft { syntax: '<color>'; inherits: true; initial-value: rgba(20, 18, 16, 0.12); }
+@property --th-cg1 { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0); }
+@property --th-cg2 { syntax: '<color>'; inherits: true; initial-value: rgba(0, 0, 0, 0); }
+
+.app {
+  transition:
+    --th-floor 0.7s ease, --th-dot 0.7s ease, --th-sec 0.7s ease, --th-sec-line 0.7s ease,
+    --th-g1 0.9s ease, --th-g2 0.9s ease, --th-g3 0.9s ease, --th-vig 0.7s ease,
+    --th-hud 0.7s ease, --th-hud-strong 0.7s ease,
+    --th-paper 0.7s ease, --th-paper-line 0.7s ease, --th-paper-chip 0.7s ease, --th-paper-muted 0.7s ease,
+    --th-accent 0.7s ease, --th-accent-soft 0.7s ease, --th-cg1 0.9s ease, --th-cg2 0.9s ease;
+}
+
 :root {
   --bg: #0b0b0d;
   --ink: #fbfaf7;
@@ -39,12 +69,26 @@
   z-index: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 1px 1px, rgba(251, 250, 247, 0.11) 1px, transparent 1.6px) 0 0 / var(--dot, 24px) var(--dot, 24px),
-    #101012;
+    radial-gradient(circle at 1px 1px, var(--th-dot) 1px, transparent 1.6px) 0 0 / var(--dot, 24px) var(--dot, 24px),
+    var(--th-floor);
   cursor: grab;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+}
+/* the room light: the theme's colours in the corners, its grain and vignette, all at a whisper.
+   Fixed to the viewport (it lights the board, it is not drawn on it). */
+.bd-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    var(--th-grain, none),
+    radial-gradient(140% 100% at 50% 45%, transparent 55%, var(--th-vig) 100%),
+    radial-gradient(60% 70% at 0% 0%, var(--th-g1), transparent 70%),
+    radial-gradient(65% 75% at 100% 100%, var(--th-g2), transparent 72%),
+    radial-gradient(42% 50% at 100% 0%, var(--th-g3), transparent 70%);
 }
 .app.is-dragging .bd-stage { cursor: grabbing; }
 .app[data-tool='move'] .bd-stage { cursor: default; }
@@ -61,7 +105,7 @@
 .bd-over .bd-board { pointer-events: none; }
 
 /* sections: a quiet container and a small label, like sections in a design file */
-.bd-sec { position: absolute; border-radius: 26px; background: rgba(255, 255, 255, 0.028); box-shadow: inset 0 0 0 calc(1px / var(--s)) rgba(255, 255, 255, 0.1); }
+.bd-sec { position: absolute; border-radius: 26px; background: var(--th-sec); box-shadow: inset 0 0 0 calc(1px / var(--s)) var(--th-sec-line); }
 .bd-label {
   position: absolute; left: 0; top: 0;
   transform: translateY(-100%) scale(calc(1 / var(--s))); transform-origin: 0 100%;
@@ -138,6 +182,28 @@
 .bd-frame.is-ux:hover .bd-play { transform: translate(35%, -35%) scale(calc(1.25 / var(--s))); }
 .bd-play::after { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
 
+/* the shelf collectibles (toys.ts): one shared WebGL canvas draws them over the frames;
+   each has a hit area and a soft contact shadow in the board, and a name tag above it */
+.bd-toys { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.bd-toy { position: absolute; border-radius: 50%; cursor: grab; touch-action: none; }
+.bd-toy.is-dragging { cursor: grabbing; }
+.app[data-tool='marker'] .bd-toy, .app[data-tool='stamp'] .bd-toy, .app[data-tool='note'] .bd-toy { pointer-events: none; }
+.bd-toy i {
+  position: absolute; left: 22%; right: 22%; bottom: 3%; height: 13%; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.16) 55%, transparent);
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.bd-toy.is-ready i { opacity: 1; }
+.bd-toylabel {
+  position: absolute; display: grid; gap: 3px; justify-items: center; padding: 7px 10px 8px; border-radius: 10px;
+  transform: translateX(-50%) scale(calc(1 / var(--s))); transform-origin: 50% 0;
+  background: rgba(18, 18, 22, 0.88); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 10px 24px -10px rgba(0, 0, 0, 0.7);
+  white-space: nowrap; pointer-events: none; opacity: 0; translate: 0 4px; transition: opacity 0.15s ease, translate 0.25s var(--out);
+}
+.bd-toylabel.is-on { opacity: 1; translate: 0 0; }
+.bd-toylabel b { font: 600 12.5px/1 var(--ui); color: #fff; }
+.bd-toylabel span { font: 500 11px/1.1 var(--mono); color: rgba(251, 250, 247, 0.56); }
+
 /* connectors from the home frame to each section */
 .bd-links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .bd-links path { fill: none; stroke: rgba(251, 250, 247, 0.34); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
@@ -205,9 +271,10 @@
   color: #fff;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 52%),
-    rgba(26, 26, 30, 0.62);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
-  backdrop-filter: blur(18px) saturate(180%);
+    var(--th-tex, none),
+    var(--th-hud);
+  -webkit-backdrop-filter: blur(var(--th-hud-blur, 18px)) saturate(180%);
+  backdrop-filter: blur(var(--th-hud-blur, 18px)) saturate(180%);
   box-shadow:
     inset 0 0 0 0.5px rgba(255, 255, 255, 0.2),
     inset 0 1px 1px -0.5px rgba(255, 255, 255, 0.7),
@@ -224,14 +291,15 @@
 .bd-nav button.is-home svg { width: 16px; height: 16px; }
 .bd-nav hr { width: 1px; height: 20px; margin: 0 4px; border: 0; background: rgba(255, 255, 255, 0.16); flex: none; }
 
-.bd-tools { left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); translate: -50% 0; display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 16px; max-width: calc(100vw - 16px); }
+/* the toolbar shares the bottom with the theme button (src/ui/ThemeDock.tsx): nudged right by half of it */
+.bd-tools { left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); translate: calc(-50% + 29px) 0; display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 16px; max-width: calc(100vw - 16px - 58px); }
 .bd-tool { position: relative; width: 38px; height: 38px; flex: none; border: 0; border-radius: 11px; display: grid; place-items: center; background: transparent; cursor: pointer; transition: background-color 0.15s ease, transform 0.3s var(--spring); }
 .bd-tool svg { width: 19px; height: 19px; }
 .bd-tool:hover { background: rgba(255, 255, 255, 0.12); }
 .bd-tool:active { transform: scale(0.92); }
 .bd-tool[aria-pressed='true'] { background: var(--lime); color: #111; }
 .bd-tools hr { width: 1px; height: 20px; margin: 0 4px; border: 0; background: rgba(255, 255, 255, 0.16); }
-.bd-tray { left: 50%; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 58px); translate: -50% 0; display: none; gap: 4px; padding: 5px; border-radius: 14px; }
+.bd-tray { left: 50%; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 58px); translate: calc(-50% + 29px) 0; display: none; gap: 4px; padding: 5px; border-radius: 14px; }
 .bd-tray.is-on { display: flex; }
 .bd-tray button { width: 36px; height: 36px; border: 0; border-radius: 10px; display: grid; place-items: center; background: transparent; cursor: pointer; }
 .bd-tray button[aria-pressed='true'] { background: rgba(255, 255, 255, 0.18); box-shadow: inset 0 0 0 1.5px #fff; }
@@ -256,6 +324,8 @@
 @media (max-width: 720px) {
   .bd-mini, .bd-tip, .bd-zoom { display: none; }
   .bd-tool { width: 34px; height: 34px; }
+  .bd-tools { overflow-x: auto; scrollbar-width: none; }
+  .bd-tools::-webkit-scrollbar { display: none; }
   .bd-tools hr { margin: 0 1px; }
   .bd-nav { max-width: calc(100vw - 24px); }
 }
@@ -282,8 +352,19 @@
    over its frame; zooming in unfolds the rest of the page out of it. */
 .casepage {
   position: fixed; inset: 0; z-index: 3; display: none; overflow: hidden; transform-origin: 0 0;
-  background: #f4efe6; font-family: var(--ui); pointer-events: none;
+  background: var(--th-paper); font-family: var(--ui); pointer-events: none;
 }
+/* the theme's light on the paper, fixed to the page (it does not scroll with the text) */
+.casepage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 60% at 100% 100%, var(--th-cg1), transparent 72%),
+    radial-gradient(45% 55% at 0% 55%, var(--th-cg2), transparent 70%);
+}
+.casepage ::selection { background: var(--th-accent-soft); }
 .casepage.is-on { display: block; }
 /* while a page is unfolding out of its frame, the frame's own selection chrome steps aside */
 .app.case-open .bd-frame.is-selected .bd-sel, .app.case-open .bd-frame.is-selected .bd-open, .app.case-open .bd-frame.is-selected .bd-play { opacity: 0; pointer-events: none; }
@@ -293,23 +374,23 @@
 .case__hero { position: relative; height: var(--hero-h, min(72svh, 720px)); margin: 0; overflow: hidden; }
 .case__hero .w { border-radius: 0; }
 .case__body { max-width: 980px; margin: 0 auto; padding: 56px max(20px, env(safe-area-inset-left)) 96px; display: grid; gap: 22px; }
-.case__kicker { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: #6b6458; }
+.case__kicker { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--th-accent); }
 .case__title { margin: 0; font: italic 400 clamp(44px, 7vw, 104px)/0.94 var(--serif); letter-spacing: -0.03em; text-wrap: balance; }
 .case__meta { display: flex; flex-wrap: wrap; gap: 8px; }
-.case__meta span { font: 500 12.5px/1 var(--mono); padding: 9px 12px; border-radius: 999px; background: #fff; box-shadow: inset 0 0 0 1px #e5ded2; }
+.case__meta span { font: 500 12.5px/1 var(--mono); padding: 9px 12px; border-radius: 999px; background: var(--th-paper-chip); box-shadow: inset 0 0 0 1px var(--th-paper-line); }
 .case__text { display: grid; gap: 18px; }
 .case__p { margin: 0; font-size: 19px; line-height: 1.55; color: #3e3a33; max-width: 680px; }
 .case__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
 .case__grid > div { aspect-ratio: 4 / 3; border-radius: 20px; overflow: hidden; }
-.case__next { margin-top: 40px; padding-top: 28px; border-top: 1px solid #ddd5c7; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.case__next { margin-top: 40px; padding-top: 28px; border-top: 1px solid var(--th-paper-line); display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .case__next button { border: 0; background: none; padding: 0; cursor: pointer; color: #141210; font: italic 400 clamp(28px, 4vw, 48px)/1 var(--serif); letter-spacing: -0.02em; text-align: left; }
-.case__next button:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; }
-.case__next span { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: #6b6458; }
+.case__next button:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; text-decoration-color: var(--th-accent); }
+.case__next span { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--th-paper-muted); }
 .case__close {
   position: absolute; z-index: 3; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left));
   height: 44px; padding: 0 14px 0 11px; border-radius: 15px; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
   font: 500 13px/1 var(--ui); color: #fff; opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
-  background: rgba(26, 26, 30, 0.72); -webkit-backdrop-filter: blur(18px) saturate(180%); backdrop-filter: blur(18px) saturate(180%);
+  background: var(--th-hud-strong); -webkit-backdrop-filter: blur(18px) saturate(180%); backdrop-filter: blur(18px) saturate(180%);
   box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.2), 0 10px 30px -12px rgba(0, 0, 0, 0.55);
 }
 .case__close svg { width: 16px; height: 16px; }

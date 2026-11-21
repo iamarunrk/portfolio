@@ -1,3 +1,4 @@
+import { LIBRARY_ORDER } from '../objects/library/order';
 import { WORKS, type Work, type WorkType } from './works';
 
 /**
@@ -7,6 +8,10 @@ import { WORKS, type Work, type WorkType } from './works';
  *   └────────┘   └──────┘   └────┘      Product is rows of equal height. Sections grow with their content
  *        ┌──── Product ────┐            and each one is a jump target for the nav chips.
  *        └─────────────────┘
+ *
+ * Around (and between) the work there is room for the shelf collectibles: the 18 toys from
+ * src/objects/library are scattered over the free canvas, spread as evenly as the space allows
+ * (farthest-point sampling over every spot that keeps clear of frames, labels and connectors).
  */
 
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -15,6 +20,8 @@ export interface Box { cx: number; cy: number; w: number; h: number }
 export interface Frame extends Rect { work: Work; dx: number; dy: number }
 export interface Section extends Rect { id: WorkType; name: string; tab: string; count: number }
 export interface StoryStop { id: string; name: string; boxes: Box[] }
+/** A shelf collectible lying on the board: its centre, diameter (board px) and a little pose of its own. */
+export interface ToySpot { kind: string; x: number; y: number; d: number; yaw: number; roll: number; phase: number }
 
 export interface BoardLayout {
   w: number;
@@ -27,10 +34,14 @@ export interface BoardLayout {
   heroC: { x: number; y: number };
   heroMax: { w: number; h: number };
   over: Box;
-  /** The first step back from the homepage (the whole board; on phones, its top). `aspect` = viewport w / h. */
+  /** The first step back from the homepage (wide: the whole board, toys included; phones: the top of the column). `aspect` = viewport w / h. */
   first(aspect: number): Box;
   stops: StoryStop[];
+  /** The collectibles scattered over the free canvas. */
+  toys: ToySpot[];
 }
+
+type Content = Omit<BoardLayout, 'toys'>;
 
 const M = 120; // board margin
 const TOP = 150;
@@ -45,6 +56,8 @@ const HERO_MAX_P = { w: 780, h: 1500 };
 const ROW_H = 450;
 const ROW_GAP = 50;
 const ROW_MAX = 2700;
+/** Phones: room between the stacked sections (a few collectibles lie there). */
+const GAP_P = 470;
 
 const NAMES: Record<WorkType, { name: string; tab: string }> = {
   motion: { name: 'Motion', tab: '#ff7ac6' },
@@ -118,19 +131,173 @@ function slide(sec: Section, tall: number): Box[] {
   return Array.from({ length: n }, (_, i) => ({ cx: sec.x + sec.w / 2, cy: top + maxH / 2 + (i * (total - maxH)) / (n - 1), w, h: maxH }));
 }
 
-export function layoutBoard(works: Work[] = WORKS, portrait = false): BoardLayout {
-  return portrait ? layoutColumn(works) : layoutWide(works);
+export function layoutBoard(works: Work[] = WORKS, portrait = false, toys: string[] = LIBRARY_ORDER): BoardLayout {
+  return portrait ? withToys(layoutColumn(works), toys, TOYS_TALL) : withToys(layoutWide(works), toys, TOYS_WIDE);
+}
+
+// ── the collectibles ────────────────────────────────────────────────────────
+
+interface ToyRoom {
+  /** Extra canvas added around the work (board px). */
+  pad: { l: number; r: number; t: number; b: number };
+  /** Toy diameter range. */
+  d: [number, number];
+  /** Clearance from sections, the homepage frame and connectors. */
+  gap: number;
+  /** The homepage frame's tallest shape to keep clear of (w / h). */
+  heroAspect: number | null;
+  /** Where the first toy goes (relative to the hero frame), the rest spread out from there. */
+  start: (hero: Rect) => { x: number; y: number };
+  /** Leaving the homepage lands on the whole board (toys included) rather than on the work alone. */
+  landOnAll: boolean;
+  /** Board corners the HUD covers in the overview (the minimap): no toy lies there. */
+  hud: (w: number, h: number) => Rect[];
+}
+const TOYS_WIDE: ToyRoom = {
+  pad: { l: 480, r: 480, t: 360, b: 460 },
+  d: [270, 330],
+  gap: 56,
+  heroAspect: 1.2,
+  start: (r) => ({ x: r.x + r.w * 0.18, y: r.y + r.h + 260 }),
+  landOnAll: true,
+  hud: (w, h) => [{ x: w - 820, y: h - 600, w: 820, h: 600 }],
+};
+const TOYS_TALL: ToyRoom = {
+  pad: { l: 210, r: 210, t: 0, b: 380 },
+  d: [205, 245],
+  gap: 40,
+  heroAspect: null,
+  start: (r) => ({ x: r.x - 140, y: r.y + r.h * 0.3 }),
+  // phones keep landing on the column itself; the toys beside it peek in
+  landOnAll: false,
+  hud: () => [],
+};
+
+/** Small deterministic PRNG, so every visitor gets the same board. */
+function rng(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const distToRect = (r: Rect, x: number, y: number) =>
+  Math.hypot(Math.max(r.x - x, 0, x - (r.x + r.w)), Math.max(r.y - y, 0, y - (r.y + r.h)));
+
+/** Grow the canvas around the work and scatter the collectibles over whatever is free. */
+function withToys(c: Content, kinds: string[], room: ToyRoom): BoardLayout {
+  const { l, r, t, b } = room.pad;
+  const W = c.w + l + r;
+  const H = c.h + t + b;
+  const mv = (bx: Box): Box => ({ ...bx, cx: bx.cx + l, cy: bx.cy + t });
+  const first = c.first;
+  const over: Box = { cx: W / 2, cy: H / 2, w: W + 160, h: H + 300 };
+  const L: Content = {
+    ...c,
+    w: W,
+    h: H,
+    sections: c.sections.map((s) => ({ ...s, x: s.x + l, y: s.y + t })),
+    frames: c.frames.map((f) => ({ ...f, x: f.x + l, y: f.y + t })),
+    heroC: { x: c.heroC.x + l, y: c.heroC.y + t },
+    over,
+    first: room.landOnAll ? () => over : (aspect) => mv(first(aspect)),
+    stops: c.stops.map((st) => ({ ...st, boxes: st.boxes.map(mv) })),
+  };
+
+  // what the toys keep clear of
+  const hw = L.heroMax.w;
+  const hh = room.heroAspect ? Math.min(L.heroMax.h, hw / room.heroAspect) : L.heroMax.h;
+  const hero: Rect = { x: L.heroC.x - hw / 2, y: L.heroC.y - hh / 2, w: hw, h: hh };
+  const keep: { r: Rect; gap: number }[] = [
+    { r: hero, gap: room.gap },
+    { r: { x: hero.x - 10, y: hero.y - 130, w: 320, h: 130 }, gap: 10 }, // the Home label
+  ];
+  for (const s of L.sections) {
+    keep.push({ r: s, gap: room.gap });
+    keep.push({ r: { x: s.x - 10, y: s.y - 150, w: 460, h: 150 }, gap: 10 }); // section label
+  }
+  for (const r of room.hud(W, H)) keep.push({ r, gap: 0 });
+  // connectors from the homepage frame to the sections
+  const cy = L.heroC.y;
+  for (const s of L.sections) {
+    if (s.y > hero.y + hero.h) keep.push({ r: { x: L.heroC.x - 2, y: hero.y + hero.h, w: 4, h: s.y - hero.y - hero.h }, gap: 36 });
+    else if (s.x + s.w < hero.x) keep.push({ r: { x: s.x + s.w, y: cy - 2, w: hero.x - s.x - s.w, h: 4 }, gap: 36 });
+    else if (s.x > hero.x + hero.w) keep.push({ r: { x: hero.x + hero.w, y: cy - 2, w: s.x - hero.x - hero.w, h: 4 }, gap: 36 });
+  }
+
+  // every spot a toy of the largest size fits, on a jittered grid
+  const rand = rng(7);
+  const rad = (room.d[1] / 2) * 1.07; // room for the hover lift
+  const edge = 60 + rad;
+  const step = 34;
+  const cands: { x: number; y: number }[] = [];
+  for (let y = edge; y <= H - edge; y += step) {
+    for (let x = edge; x <= W - edge; x += step) {
+      const px = x + (rand() - 0.5) * step * 0.7;
+      const py = y + (rand() - 0.5) * step * 0.7;
+      if (keep.every((k) => distToRect(k.r, px, py) >= rad + k.gap)) cands.push({ x: px, y: py });
+    }
+  }
+
+  // farthest-point sampling: each toy goes where it is furthest from all the others
+  const n = Math.min(kinds.length, cands.length);
+  const near = new Float64Array(cands.length).fill(Infinity);
+  const s0 = room.start(hero);
+  let cur = 0;
+  cands.forEach((p, i) => {
+    if (Math.hypot(p.x - s0.x, p.y - s0.y) < Math.hypot(cands[cur].x - s0.x, cands[cur].y - s0.y)) cur = i;
+  });
+  const spots: { x: number; y: number }[] = [];
+  for (let k = 0; k < n; k++) {
+    const p = cands[cur];
+    spots.push(p);
+    let best = -1;
+    let far = -1;
+    for (let i = 0; i < cands.length; i++) {
+      const d = Math.hypot(cands[i].x - p.x, cands[i].y - p.y);
+      if (d < near[i]) near[i] = d;
+      if (near[i] > far) {
+        far = near[i];
+        best = i;
+      }
+    }
+    cur = best;
+  }
+
+  // a stable shuffle, so neighbours are of different kinds
+  const order = kinds.slice(0, n);
+  const mix = rng(23);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(mix() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const pose = rng(41);
+  const toys: ToySpot[] = spots.map((p, i) => ({
+    kind: order[i],
+    x: Math.round(p.x),
+    y: Math.round(p.y),
+    d: Math.round(room.d[0] + pose() * (room.d[1] - room.d[0])),
+    yaw: (pose() - 0.5) * 0.9,
+    roll: (pose() - 0.5) * 0.22,
+    phase: pose() * Math.PI * 2,
+  }));
+  return { ...L, toys };
 }
 
 /** Phones: Home on top, then one section under another. */
-function layoutColumn(works: Work[]): BoardLayout {
+function layoutColumn(works: Work[]): Content {
   const W = M * 2 + SIDE_W;
   const cx = W / 2;
   const sections: Section[] = [];
   const frames: Frame[] = [];
   const stops: StoryStop[] = [];
   const heroC = { x: cx, y: TOP + HERO_MAX_P.h / 2 };
-  let y = TOP + HERO_MAX_P.h + 230;
+  // the gaps hold some of the collectibles
+  let y = TOP + HERO_MAX_P.h + GAP_P;
   for (const type of ['motion', '3d', 'ux'] as WorkType[]) {
     const list = works.filter((w) => w.type === type);
     if (!list.length) continue;
@@ -139,9 +306,9 @@ function layoutColumn(works: Work[]): BoardLayout {
     sections.push(sec);
     frames.push(...body.frames);
     stops.push({ id: type === 'ux' ? 'product' : type, name: sec.name, boxes: slide(sec, 2) });
-    y += sec.h + 200;
+    y += sec.h + GAP_P;
   }
-  const H = y - 200 + M;
+  const H = y - GAP_P + M;
   return {
     w: W,
     h: H,
@@ -160,7 +327,7 @@ function layoutColumn(works: Work[]): BoardLayout {
   };
 }
 
-function layoutWide(works: Work[]): BoardLayout {
+function layoutWide(works: Work[]): Content {
   const of = (t: WorkType) => works.filter((w) => w.type === t);
   const sections: Section[] = [];
   const frames: Frame[] = [];

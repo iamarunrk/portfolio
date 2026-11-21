@@ -2,6 +2,7 @@ import { homeGestures, homeView, type GesturePhase } from '../view';
 import { buildCasePage, caseFromHash, caseHash } from './caseStudy';
 import { clamp, ease, h, isTyping, lerp, smoothstep, svg } from './dom';
 import { aspectOf, layoutBoard, type Box, type Frame, type Rect } from './layout';
+import { mountBoardToys } from './toys';
 import { WORKS, mountWork } from './works';
 import './board.css';
 
@@ -21,6 +22,7 @@ import './board.css';
  *  - The canvas is a plain free canvas: scroll pans, ⌘/Ctrl + scroll or pinch zooms, a click selects.
  *    Zooming in on the selected Home frame steers the camera onto it, so the zoom ends exactly
  *    on the homepage.
+ *  - The shelf collectibles lie around the work (toys.ts): hover one, drag to spin it, click to twirl.
  *
  * Everything here is imperative DOM so camera moves never re-render React.
  */
@@ -261,6 +263,9 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   });
   const cursorPos = (c: Visitor, t: number) => ({ x: c.cx + Math.sin(t * c.sp * 2 + c.ph) * c.rx, y: c.cy + Math.sin(t * c.sp * 3.1 + c.ph * 1.7) * c.ry });
 
+  // the shelf collectibles, scattered over the free canvas (built lazily, the first time the board shows)
+  const toyLayer = mountBoardToys({ under, top, stage, spots: L.toys });
+
   // HUD
   const nav = h('div', { class: 'bd-glass bd-nav', role: 'navigation', 'aria-label': 'Board' });
   const trays = {
@@ -281,9 +286,15 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   const ghost = h('div', { class: 'bd-ghost-stamp' });
   const confettiCv = h('canvas', { class: 'bd-confetti' });
   hud.replaceChildren(nav, right, trays.marker, trays.stamp, toolsEl, mini, tip, toastEl, youTag, ghost, confettiCv);
+  // the theme button (src/ui/ThemeDock.tsx) sits beside the toolbar, so it needs the toolbar's width
+  const toolsRo = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => app.style.setProperty('--bd-tools-w', `${toolsEl.offsetWidth}px`))
+    : null;
+  toolsRo?.observe(toolsEl);
 
   SECTIONS.forEach((s) => miniSvg.append(svg('rect', { x: s.x, y: s.y, width: s.w, height: s.h, rx: 40, fill: '#fff', opacity: 0.08 })));
   const miniFrames = FRAMES.map((f) => miniSvg.appendChild(svg('rect', { x: f.x, y: f.y, width: f.w, height: f.h, rx: 24, fill: f.work.tone })));
+  L.toys.forEach((t) => miniSvg.append(svg('circle', { cx: t.x, cy: t.y, r: t.d * 0.34, fill: '#fff', opacity: 0.22 })));
   const miniHero = miniSvg.appendChild(svg('rect', { rx: 24, fill: '#d7ff3a' }));
   const vp = miniSvg.appendChild(svg('rect', { class: 'vp', rx: 30 }));
   const syncMini = () => {
@@ -899,6 +910,9 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     text.focus({ preventScroll: true });
   }
 
+  /** The theme button (src/ui/ThemeDock.tsx) listens for this. */
+  const toggleTheme = () => window.dispatchEvent(new CustomEvent('theme:toggle'));
+
   // ── small pleasures ──────────────────────────────────────────────────────
   let confettiRaf = 0;
   function confetti() {
@@ -963,7 +977,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   on(app, 'pointerdown', (e: PointerEvent) => {
     if (place === 'home' || place === 'case' || busy()) return;
     const target = e.target as Element;
-    if (target.closest('.bd-glass, .bd-cmt, .bd-sticky, .bd-cursor b, .bd-open, .bd-play, .home, .case')) return;
+    if (target.closest('.bd-glass, .bd-cmt, .bd-sticky, .bd-cursor b, .bd-open, .bd-play, .home, .case, .th-dock')) return;
     // part-way along the portal, a finger keeps scrolling it (up or down), like the page it still is
     if (place === 'portal' && e.pointerType === 'touch' && ptrs.size === 0 && e.button === 0) {
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1156,6 +1170,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
   on(app, 'wheel', (e: WheelEvent) => {
     if (e.defaultPrevented) return; // a toy on the homepage took it
     const target = e.target as Element;
+    if (target.closest?.('.th-dock')) return; // the theme panel scrolls by itself
     const now = performance.now();
     const gap = now - lastWheel;
     lastWheel = now;
@@ -1337,8 +1352,10 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     }
     const k = e.key.toLowerCase();
     if (busy()) return;
+    const themeKey = k === 't' && !e.metaKey && !e.ctrlKey && !e.altKey;
     if (place === 'case') {
       if (k === 'escape') closeCase();
+      else if (themeKey) toggleTheme();
       return;
     }
     if (place === 'home') {
@@ -1380,6 +1397,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     const map: Record<string, Tool> = { h: 'hand', v: 'move', p: 'marker', m: 'marker', s: 'stamp', n: 'note' };
     if (map[k]) return setTool(map[k]);
     if (k === 'c') return toggleComments();
+    if (themeKey) return toggleTheme();
     if (k === '=' || k === '+') zoomStep(1.3);
     else if (k === '-') zoomStep(1 / 1.3);
     else if (k === '0') zoomAt(W / 2, H / 2, 1 / free.z);
@@ -1410,6 +1428,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       if (caseDrawn !== 'off') {
         caseDrawn = 'off';
         el.classList.remove('is-on', 'is-in');
+        app.classList.remove('case-in');
       }
       return;
     }
@@ -1418,6 +1437,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       if (caseDrawn !== 'in') {
         caseDrawn = 'in';
         el.classList.add('is-on', 'is-in');
+        app.classList.add('case-in');
         el.style.transform = el.style.clipPath = el.style.opacity = '';
         el.style.removeProperty('--hero-h');
       }
@@ -1427,6 +1447,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       caseDrawn = 'out';
       el.classList.add('is-on');
       el.classList.remove('is-in');
+      app.classList.remove('case-in');
     }
     const f = FRAMES[i], r = caseRect(i), z = cam.z;
     // q 0 → 0.55: the hero (sitting exactly on the frame) takes its page shape and the body unrolls below it
@@ -1444,7 +1465,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
 
   // ── the board assembles around the homepage as the portal opens ──────────
   // each section and frame pops in a little later the further it is from Home
-  const pieces: { el: HTMLElement; d: number; k: number }[] = [];
+  const pieces: { el: HTMLElement; d: number; k: number; toy?: number }[] = [];
   {
     const far = Math.hypot(BW, BH) / 2;
     const dist = (x: number, y: number) => Math.min(1, Math.hypot(x - HERO_C.x, y - HERO_C.y) / far);
@@ -1453,6 +1474,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       pieces.push({ el, d: 0.12 + 0.3 * dist(sec.x + sec.w / 2, sec.y + sec.h / 2), k: 1 });
     });
     FRAMES.forEach((f, i) => pieces.push({ el: frameEls[i], d: 0.2 + 0.46 * dist(f.x + f.w / 2, f.y + f.h / 2), k: 1 }));
+    L.toys.forEach((t, i) => pieces.push({ el: toyLayer.els[i], d: 0.32 + 0.4 * dist(t.x, t.y), k: 1, toy: i }));
   }
   function assemble(r: number) {
     for (const p of pieces) {
@@ -1461,6 +1483,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       p.k = k;
       p.el.style.opacity = k === 1 ? '' : k.toFixed(3);
       p.el.style.scale = k === 1 ? '' : (0.86 + 0.14 * k).toFixed(4);
+      if (p.toy != null) toyLayer.setAppear(p.toy, k);
     }
   }
 
@@ -1595,6 +1618,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
 
     const r = place === 'portal' && rail === 'home' ? S / S_MAX : 1;
     assemble(r);
+    toyLayer.render({ tx, ty, z, W, H }, place !== 'case' && cover < 0.999, now);
     cue.style.opacity = (smoothstep(0.05, 0.14, r) * (1 - smoothstep(0.34, 0.52, r))).toFixed(3);
     const draw = 1 - smoothstep(0.2, 0.75, cover);
     linkPaths.forEach((p, i) => (p.style.strokeDashoffset = (linkLen[i] * (1 - draw)).toFixed(1)));
@@ -1645,6 +1669,8 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
     destroy() {
       cancelAnimationFrame(raf);
       cancelAnimationFrame(confettiRaf);
+      toolsRo?.disconnect();
+      toyLayer.destroy();
       ac.abort();
       timers.forEach((id) => clearTimeout(id));
       clearTimeout(saveT);
@@ -1664,7 +1690,7 @@ function build(host: BoardHost, portrait: boolean, startOnBoard: boolean): { des
       homeView.x = homeView.y = 0;
       homeView.k = 1;
       homeView.home = true;
-      app.classList.remove('hud-on', 'show-comments', 'is-dragging', 'is-hero-hover', 'is-hero-selected', 'case-open');
+      app.classList.remove('hud-on', 'show-comments', 'is-dragging', 'is-hero-hover', 'is-hero-selected', 'case-open', 'case-in');
       delete app.dataset.view;
       delete app.dataset.tool;
       host.onView('home');

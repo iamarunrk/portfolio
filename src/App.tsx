@@ -7,7 +7,9 @@ import { useStore } from './store';
 import { Hint } from './ui/Hint';
 import { Island } from './ui/Island';
 import { ScrollCue } from './ui/ScrollCue';
+import { ThemeDock } from './ui/ThemeDock';
 import { TopBar } from './ui/TopBar';
+import { useThemeEcho } from './theme/live';
 
 /**
  * The page is a design board. The homepage (canvas, headline, chrome) is one frame on it:
@@ -20,6 +22,9 @@ export default function App() {
   const over = useRef<HTMLDivElement>(null);
   const casePage = useRef<HTMLDivElement>(null);
   const hud = useRef<HTMLDivElement>(null);
+
+  // the homepage background is the site's theme: the board and case pages echo it, quietly
+  useThemeEcho(app);
 
   useEffect(() => {
     if (!app.current || !home.current || !stage.current || !over.current || !casePage.current || !hud.current) return;
@@ -52,6 +57,7 @@ export default function App() {
       <div className="bd-over" ref={over} />
       <div className="casepage" ref={casePage} />
       <div className="bd-hudroot" ref={hud} />
+      <ThemeDock />
     </main>
   );
 }

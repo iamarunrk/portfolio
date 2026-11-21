@@ -8,7 +8,11 @@ around, and restyle the background with live shaders and glass materials. Whatev
 remembered in their browser.
 
 Scroll, and the camera pulls back: the homepage turns out to be one frame on a design board that
-holds the work (motion, 3D, product). Click the home frame and the camera flies back in.
+holds the work (motion, 3D, product), with the shelf's 18 collectibles lying around it. Click the
+home frame and the camera flies back in.
+
+Whatever the visitor picks for the homepage background is the site's **theme**: the board and the
+case-study pages echo it, very quietly, and one button on the board changes it from there too.
 
 ## What you can do
 
@@ -28,6 +32,27 @@ holds the work (motion, 3D, product). Click the home frame and the camera flies 
 The bottom island remixes the canvas: **Shaders** (animated generators), **Gradients**, **Colors**,
 **Glass** (fluted, ribbed, frosted, blur, liquid glass, glass tiles, water, crystal, prism,
 halftone, pixelate, CRT, dither) and **Effects** (grain, vignette, speed).
+
+## The theme
+
+The homepage background is the theme of the whole site (`src/theme/`). Off the homepage it is only
+an echo, kept deliberately faint, so the board stays a clean, dark design canvas and case studies
+stay calm reading pages:
+
+| Where | What follows the theme |
+| --- | --- |
+| Board canvas | the floor leans toward the hue of the theme's dark stops; a faint light in its most colourful stops sits in the corners; dots, section wash and HUD glass lean the same way |
+| Effects | grain and vignette come through at a fraction of their strength |
+| Glass | the board's glass chrome carries a whisper of the material (flutes, ribs, tiles, dots, scanlines, frost) |
+| Case studies | the paper leans toward the theme's light stops, the kicker and small accents take its colour, and a soft light of it sits behind the text |
+
+Neutral themes (Ink, Mercury, black, white) give back the original look. A theme change glides
+rather than snaps (the colours are registered custom properties).
+
+**One button to change it, anywhere.** On the board and inside a case study the remix island folds
+into a single button at the bottom (a live swatch of the theme, beside the board's toolbar).
+It opens the same Shaders, Gradients, Colors, Glass and Effects controls and the dice;
+<kbd>T</kbd> toggles it. The homepage frame on the board repaints live while you change it.
 
 ## The board
 
@@ -67,6 +92,8 @@ The only animated moves are explicit commands: the Work button, the Home chip, *
 | Jump to a section | the chips top-left (Overview, Motion, 3D, Product) or the minimap | the chips |
 | Leave a mark | marker <kbd>P</kbd>, stamps <kbd>S</kbd>, sticky notes <kbd>N</kbd>, move frames <kbd>V</kbd>, undo <kbd>⌘Z</kbd> | same tools in the toolbar |
 | Designer's notes | <kbd>C</kbd> | the speech-bubble tool |
+| Change the theme | the swatch button beside the toolbar, or <kbd>T</kbd> | the swatch button |
+| Play with a collectible | hover it (name tag), drag to spin it, click to twirl it | tap to twirl it |
 
 Marks (ink, stamps, notes, moved frames) are saved in the visitor's own browser. The two other
 cursors on the board are scripted, not live visitors.
@@ -89,6 +116,21 @@ The board lays itself out from that list (`src/board/layout.ts`): Motion and 3D 
 masonry (pieces wider than about 7:5 span two columns), Product is rows of equal height. Sections
 grow with their content and the order in the list is the order on the board. On phones everything
 stacks in one column under the homepage, so you pan straight down.
+
+### The collectibles on the board
+
+The 18 shelf toys (`src/objects/library/`) lie around the work. The layout adds free canvas around
+the sections (on phones, between them) and scatters the toys over every spot that keeps clear of
+frames, labels and connectors, as evenly as the space allows (farthest-point sampling, seeded, so
+every visitor gets the same board). Leaving the homepage on a wide screen lands on the whole board,
+toys included.
+
+They are drawn like on the shelf page: one transparent WebGL canvas for all of them, each toy in its
+own square (viewport + scissor), placed by the board camera so they pan and zoom with everything
+else (`src/board/toys.ts`). The canvas redraws only when something moves. Toys are built in idle
+time, nearest to the view first: on desktop a few seconds after the homepage settles (only while
+the visitor isn't doing anything), on phones when the board first shows. With the marker, stamps
+or sticky notes they step aside, so you can draw and stamp over them.
 
 ## Liquid Glass chrome
 
@@ -145,16 +187,20 @@ src/
   overlay/GizmoOverlay.tsx  SVG rings, wedge, knob, selection pill, frame box
   hero/TitleFrame.tsx     the headline frame
   view.ts                 bridge between the homepage and the board camera
+  theme/
+    tokens.ts             the theme echo: muted board / case-page colours derived from the background
+    live.ts               keeps them live as CSS custom properties on the app
   board/
     board.ts              the board: camera, canvas input, selection, tools, marks, cursors
     works.ts              the list of works (+ CSS stand-ins until real files arrive)
-    layout.ts             lays the works out (wide board, or one column on phones)
+    layout.ts             lays the works out (wide board, or one column on phones) and scatters the toys
+    toys.ts               the shelf collectibles on the board (one shared WebGL canvas)
     caseStudy.ts          builds the case-study page (the board's camera unfolds it out of its frame)
   objects/                the 3D collectibles (one file each) + sticker painting helpers
-    library/              the shelf: more collectibles, built but not on the canvas yet
+    library/              the shelf: 18 more collectibles (on the board and the shelf page)
   showcase/               the shelf page (showcase.html at the repo root)
   bg/                     background engine, GLSL, presets and metadata
-  ui/                     bottom island, top bar, hint, Liquid Glass registry
+  ui/                     bottom island, theme button (ThemeDock), top bar, hint, Liquid Glass registry
 ```
 
 ## Dev pages
@@ -171,8 +217,9 @@ Run `npm run dev`, then open:
 
 ## The shelf
 
-Eighteen more collectibles are modelled and ready but **not on the homepage canvas**. They live in
-`src/objects/library/` (one file each, file name = kind) and have their own page,
+Eighteen more collectibles are modelled and ready. They lie around the work on the board (see
+"The collectibles on the board") but are **not on the homepage canvas**. They live in
+`src/objects/library/` (one file each, file name = kind) and also have their own page,
 [`showcase.html`](showcase.html): drag a toy to spin it, click it for a close-up (drag, scroll or pinch,
 ← →), filter by category and switch between the Pastel and Studio backgrounds.
 

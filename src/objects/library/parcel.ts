@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet, grey } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, arc, bump, easeOutCubic, span, wobble } from '../signature';
 import { merge, stickerPatch, type BoxFaceInfo, type FaceName } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, arcText, smallPrint, barcode, hazard, sticker, rrPath, circlePath, fillPath, rrect, hexA, type C2D } from '../paint';
@@ -685,7 +686,68 @@ function build(bctx: ObjectBuildContext) {
   geos.forEach((g) => g.dispose());
   inner.add(new THREE.Mesh(stickerGeo, paperBackfaces(stickerSheet(sheet.surf.colorTexture(), { roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.2 }), '#f3efe6')));
 
-  return finish(inner, trash, undefined, 'ship-it-box');
+  // ---------- signature: ship it. The box crouches, springs up with a stretch and a little tilt,
+  // lands with a squash and two small bounces, and a few sparkles pop off it as it lands.
+  const rig = new THREE.Group();
+  const body = new THREE.Group(); // squash about the box's bottom
+  body.position.y = -H / 2;
+  while (inner.children.length) {
+    const o = inner.children[0];
+    o.position.y += H / 2;
+    body.add(o);
+  }
+  rig.add(body);
+  rig.position.y = 0;
+  inner.add(rig);
+  const star = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 2 ? 0.42 : 1;
+    if (i) star.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    else star.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  const starGeo = new THREE.ShapeGeometry(star);
+  const sparks = [
+    { c: LIME, dir: new THREE.Vector3(-1, 0.55, 0.2), t0: 0.0 },
+    { c: PINK, dir: new THREE.Vector3(1, 0.7, 0.1), t0: 0.03 },
+    { c: LIME, dir: new THREE.Vector3(0.35, 1, 0.3), t0: 0.06 },
+    { c: PINK, dir: new THREE.Vector3(-0.55, 0.9, -0.2), t0: 0.09 },
+  ].map((d) => {
+    const mesh = new THREE.Mesh(starGeo, new THREE.MeshBasicMaterial({ color: d.c, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+    mesh.visible = false;
+    inner.add(mesh);
+    return { ...d, dir: d.dir.normalize(), mesh };
+  });
+  const LAND = 0.74;
+  const sig = signature(1.6, (p, t) => {
+    const crouch = bump(t, 0, 0.14, 0.16, 0.22);
+    const air = arc(span(t, 0.2, LAND));
+    const thud = t > LAND ? wobble(t - LAND, 3.4, 6.5) : 0;
+    const bounce = t > LAND ? 0.18 * arc(span(t, LAND + 0.08, LAND + 0.34)) + 0.06 * arc(span(t, LAND + 0.38, LAND + 0.56)) : 0;
+    rig.position.y = 0.65 * air + 0.65 * bounce;
+    const stretch = 0.08 * air * (1 - air) * 4;
+    const sq = 0.14 * crouch + 0.16 * Math.max(0, thud);
+    body.scale.set(1 + sq * 0.7 - stretch * 0.4, 1 - sq + stretch, 1 + sq * 0.7 - stretch * 0.4);
+    rig.rotation.z = 0.16 * air * Math.sin((t - 0.2) * 9) * (1 - span(t, 0.5, LAND));
+    rig.rotation.y = 0.3 * air;
+    for (const s2 of sparks) {
+      const u = span(t, LAND + s2.t0, LAND + s2.t0 + 0.55);
+      const on = p < 1 && u > 0 && u < 1;
+      s2.mesh.visible = on;
+      if (!on) continue;
+      const d = easeOutCubic(u);
+      s2.mesh.position.set(s2.dir.x * 1.05 * d, H * 0.15 + s2.dir.y * 0.75 * d, s2.dir.z * 0.6 * d + 0.3);
+      s2.mesh.scale.setScalar(0.09 * Math.sin(Math.PI * u));
+      s2.mesh.rotation.z = 3 * u;
+    }
+    if (p >= 1) {
+      rig.position.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+      body.scale.set(1, 1, 1);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'ship-it-box', sig);
 }
 
 export const parcel: LibraryDef = {

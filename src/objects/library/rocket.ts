@@ -7,6 +7,7 @@ import { lathe, fillet, merge, stickerPatch, surfaces, type P2 } from '../geomet
 import { chrome, glossyPlastic, stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, text, arcText, smallPrint, sticker, ribbonPath, circlePath, fillPath, smiley, starPath, grain, hexA, font, type C2D } from '../paint';
 import { inCell } from './_founder';
+import { signature, bump, easeInOut, smooth, span, wobble } from '../signature';
 
 /*
  * LAUNCH DAY: a chunky cream toy rocket with a hot pink ogive nose and fins, a lime
@@ -473,6 +474,7 @@ function build(bctx: ObjectBuildContext) {
   inner.add(flame);
 
   // ---------- a little exhaust cloud around the flame tip
+  let cloudMesh: THREE.Mesh;
   {
     const puffs: [number, number, number, number][] = [
       [0.0, -2.5, -0.12, 0.2],
@@ -488,12 +490,14 @@ function build(bctx: ObjectBuildContext) {
     const geos = puffs.map(([x, y, z, r]) => new THREE.SphereGeometry(r, 24, 14).scale(1, 0.86, 1).translate(x, y, z));
     const cloud = merge(geos);
     geos.forEach((g) => g.dispose());
-    inner.add(
-      new THREE.Mesh(
-        cloud,
-        new THREE.MeshPhysicalMaterial({ color: '#fff8f2', roughness: 0.75, sheen: 1, sheenColor: new THREE.Color('#ffd6c2'), sheenRoughness: 0.5, emissive: '#ff9a5a', emissiveIntensity: 0.12 }),
-      ),
+    // centred on the cloud so it can billow in place
+    cloud.translate(0, 2.47, 0);
+    cloudMesh = new THREE.Mesh(
+      cloud,
+      new THREE.MeshPhysicalMaterial({ color: '#fff8f2', roughness: 0.75, sheen: 1, sheenColor: new THREE.Color('#ffd6c2'), sheenRoughness: 0.5, emissive: '#ff9a5a', emissiveIntensity: 0.12 }),
     );
+    cloudMesh.position.y = -2.47;
+    inner.add(cloudMesh);
   }
 
   // ---------- peeling T-0 sticker (3D, front-right, between the banner and the checker ring)
@@ -518,7 +522,43 @@ function build(bctx: ObjectBuildContext) {
   };
   update(0);
 
-  return finish(inner, trash, update, 'launch-day');
+  // ---------- signature: launch. The flame gutters, then roars; the rocket shudders on the pad,
+  // the exhaust cloud billows, and it lifts off with a full roll program, hovers, and settles
+  // back down on its own flame like a reusable booster (the cloud stays on the pad).
+  const rig = new THREE.Group();
+  for (const o of [...inner.children]) if (o !== cloudMesh) rig.add(o);
+  inner.add(rig);
+  const LIFT = 0.6;
+  const sig = signature(2.6, (p, t) => {
+    const gutter = bump(t, 0, 0.12, 0.2, 0.3);
+    const roar = smooth(t, 0.22, 0.42) * (1 - smooth(t, 2.05, 2.45));
+    flame.scale.x *= (1 - 0.35 * gutter) * (1 + 0.25 * roar);
+    flame.scale.z *= (1 - 0.35 * gutter) * (1 + 0.25 * roar);
+    flame.scale.y *= (1 - 0.5 * gutter) * (1 + 0.5 * roar);
+    const up = easeInOut(span(t, 0.62, 1.3)) * (1 - easeInOut(span(t, 1.55, 2.15)));
+    const hover = 0.035 * Math.sin((t - 1.3) * 7) * bump(t, 1.25, 1.35, 1.5, 1.6);
+    rig.position.y = LIFT * up + hover;
+    // shudder on the pad, a softer one in the air
+    const shake = 0.018 * bump(t, 0.25, 0.32, 0.6, 0.8) + 0.006 * bump(t, 0.8, 0.9, 1.9, 2.1);
+    rig.position.x = shake * Math.sin(t * 83);
+    rig.position.z = shake * Math.cos(t * 71);
+    // roll program on the way up
+    rig.rotation.y = Math.PI * 2 * easeInOut(span(t, 0.7, 1.75));
+    // touchdown: a little squash and a wobble
+    const land = t > 2.15 ? wobble(t - 2.15, 3.6, 7) : 0;
+    rig.scale.set(1 + 0.04 * Math.max(0, land) + 0.03 * gutter, 1 - 0.06 * Math.max(0, land) - 0.04 * gutter, 1 + 0.04 * Math.max(0, land) + 0.03 * gutter);
+    // the exhaust cloud billows at ignition and puffs again at touchdown
+    const billow = 0.4 * bump(t, 0.25, 0.5, 0.9, 1.7) + 0.22 * bump(t, 1.9, 2.15, 2.25, 2.6);
+    cloudMesh.scale.set(1 + billow, 1 + 0.7 * billow, 1 + billow);
+    if (p >= 1) {
+      rig.position.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+      rig.scale.set(1, 1, 1);
+      cloudMesh.scale.set(1, 1, 1);
+    }
+  });
+
+  return finish(inner, trash, update, 'launch-day', sig);
 }
 
 export const rocket: LibraryDef = {

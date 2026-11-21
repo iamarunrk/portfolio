@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, arc, easeInOut, span as during, wobble } from '../signature';
 import { lathe, fillet, parametric, stickerPatch, merge, tint, place, type P2 } from '../geometry';
 import { stickerSheet, paperBackfaces, glossyPlastic } from '../materials';
 import { FONTS, DEG, rng, text, arcText, font, sticker, circlePath, rrPath, starPath, fillPath, smallPrint, barcode, factsPanel, grain } from '../paint';
@@ -445,7 +446,8 @@ function build(bctx: ObjectBuildContext) {
   const soup = new THREE.CircleGeometry(NR, 64);
   soup.rotateX(-Math.PI / 2);
   soup.translate(0, SOUP_Y, 0);
-  inner.add(new THREE.Mesh(soup, new THREE.MeshPhysicalMaterial({ map: nSurf.colorTexture(), roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.08 })));
+  const soupMesh = new THREE.Mesh(soup, new THREE.MeshPhysicalMaterial({ map: nSurf.colorTexture(), roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.08 }));
+  inner.add(soupMesh);
 
   const r = rng(2);
   const foodParts: THREE.BufferGeometry[] = [];
@@ -537,7 +539,12 @@ function build(bctx: ObjectBuildContext) {
     m.setPosition(tineTip.clone().addScaledVector(yAxis, -len));
     fork.applyMatrix4(m);
   }
-  inner.add(new THREE.Mesh(fork, glossyPlastic('#d7ff3a', { roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06, emissive: '#3a4a00', emissiveIntensity: 0.15 })));
+  // the fork turns on its own axis in the signature motion: pivot at its tine tip
+  fork.translate(-tineTip.x, -tineTip.y, -tineTip.z);
+  const forkPivot = new THREE.Group();
+  forkPivot.position.copy(tineTip);
+  forkPivot.add(new THREE.Mesh(fork, glossyPlastic('#d7ff3a', { roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06, emissive: '#3a4a00', emissiveIntensity: 0.15 })));
+  inner.add(forkPivot);
 
   // ---------- foil lid, peeled back into a curl (printed top / silver foil underside)
   const lidSurf = new Surface(1024, 1024, bctx);
@@ -601,7 +608,31 @@ function build(bctx: ObjectBuildContext) {
 
   // ---------- steam from the open half (added after normalising)
   const st = steam(bctx, { base: new THREE.Vector3(0.3, SOUP_Y + 0.3, 1.6), spread: 1.8, height: 6.2, width: 2.6, count: 4, opacity: 0.4, seed: 21 });
-  const built = finish(inner, trash, st.update, 'two-minute-mvp');
+  // ---------- signature: the twirl. The fork winds the noodles: it turns twice on its own axis and
+  // lifts a touch, the noodles swirl round the cup with it, and when it is done the cup gives a
+  // little "ding, ready" hop.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const sig = signature(1.9, (p, t) => {
+    const wind = easeInOut(during(t, 0, 1.15));
+    forkPivot.quaternion.setFromAxisAngle(forkDir, -Math.PI * 4 * wind);
+    forkPivot.position.copy(tineTip).addScaledVector(forkDir, -0.7 * Math.sin(Math.PI * during(t, 0, 1.15)));
+    soupMesh.rotation.y = -1.4 * wind * (1 - easeInOut(during(t, 1.15, 1.7)));
+    const hop = arc((t - 1.2) / 0.34);
+    rig.position.y = 0.7 * hop;
+    const land = t > 1.54 ? wobble(t - 1.54, 3.5, 8) : 0;
+    rig.scale.set(1 + 0.03 * land, 1 - 0.04 * land, 1 + 0.03 * land);
+    if (p >= 1) {
+      forkPivot.quaternion.identity();
+      forkPivot.position.copy(tineTip);
+      soupMesh.rotation.y = 0;
+      rig.position.set(0, 0, 0);
+      rig.scale.set(1, 1, 1);
+    }
+  });
+
+  const built = finish(inner, trash, st.update, 'two-minute-mvp', sig);
   inner.add(st.mesh);
   trash.add(st.mesh.geometry);
   trash.add(st.mesh.material as THREE.Material);

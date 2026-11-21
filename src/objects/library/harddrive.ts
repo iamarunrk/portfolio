@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, bump, easeInOut, smooth, span, wobble } from '../signature';
 import { lathe, merge, parametric, place, ribbon, stickerPatch, surfaces, tint } from '../geometry';
 import { brushedAluminium, chrome, paperBackfaces, stickerSheet } from '../materials';
 import { FONTS, DEG, rng, text, sticker, rrPath, fillPath, smallPrint, barcode, hazard, type C2D } from '../paint';
@@ -516,16 +517,50 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.6, emissive: '#ffffff', emissiveMap: sheetTex, emissiveIntensity: 0.3 }), '#f1ece0')));
 
   // ---------- idle: platter spins, the arm seeks, the LED blinks on seeks
+  // the signature motion layers on top of the idle: extra platter turn, its own seeks, its own LED
+  const act = { on: false, spin: 0, seek: 0, mix: 0, led: 0 };
   const update = (t: number) => {
-    platter.rotation.z = -t * 0.9;
+    platter.rotation.z = -t * 0.9 - act.spin;
     const seek = Math.sin(t * 0.7) * 0.5 + Math.sin(t * 2.3 + 1) * 0.25;
-    arm.rotation.z = armBase + 0.09 * seek;
+    arm.rotation.z = armBase + 0.09 * seek * (1 - act.mix) + 0.2 * act.seek * act.mix;
     const blink = Math.sin(t * 9) > 0.2 && Math.sin(t * 0.7 + 0.6) > -0.3 ? 1 : 0.15;
-    ledMat.emissiveIntensity = 0.5 + 2.4 * blink;
+    ledMat.emissiveIntensity = act.on ? 0.4 + 3.2 * act.led : 0.5 + 2.4 * blink;
   };
   update(0);
 
-  return finish(inner, trash, update, 'cold-storage');
+  // ---------- signature: saving. The platter spins up, the arm darts across it in quick seeks, the
+  // LED chatters, the case hums; then it all spins down.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  let spinFrom = 0;
+  // seek targets (in units of the idle swing) and when the arm gets there
+  const seeks: [number, number][] = [[0.0, 0], [-1.6, 0.18], [1.4, 0.34], [-0.6, 0.48], [1.8, 0.62], [-1.2, 0.78], [0.4, 0.94], [0, 1.1]];
+  const sig = signature(1.6, (p, t) => {
+    act.on = p < 1;
+    if (t === 0) spinFrom = act.spin;
+    // spin-up: about two and a half extra turns, eased in and out
+    act.spin = spinFrom + Math.PI * 5 * easeInOut(span(t, 0, 1.45));
+    act.mix = smooth(t, 0, 0.12) * (1 - smooth(t, 1.1, 1.45));
+    let k = 0;
+    while (k < seeks.length - 2 && t > seeks[k + 1][1]) k++;
+    const [a, ta] = seeks[k];
+    const [b, tb] = seeks[k + 1];
+    act.seek = a + (b - a) * easeInOut(span(t, ta, tb));
+    act.led = (Math.sin(t * 61) > 0 ? 1 : 0.1) * (t < 1.15 ? 1 : 0.1);
+    const hum = smooth(t, 0.05, 0.25) * (1 - smooth(t, 1.0, 1.45));
+    rig.position.x = 0.03 * Math.sin(t * 110) * hum;
+    rig.position.y = 0.025 * Math.sin(t * 93 + 1) * hum;
+    // the head parks: a small settle of the whole drive
+    rig.rotation.z = 0.02 * bump(t, 0, 0.1, 0.15, 0.35) + (t > 1.12 ? wobble(t - 1.12, 4, 8) * 0.025 : 0);
+    if (p >= 1) {
+      act.mix = 0;
+      rig.position.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, update, 'cold-storage', sig);
 }
 
 export const harddrive: LibraryDef = {

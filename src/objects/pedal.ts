@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import type { ObjectBuildContext, ObjectDef } from './types';
 import { Surface, StickerSheet } from './textures';
 import { Trash, finish } from './build';
+import { signature, bump, easeOutBack, smooth, span, wobble } from './signature';
 import { atlasRoundedBox, boxFaceDims, lathe, merge, place, tint, parametric, stickerPatch, surfaces, type FaceName, type FaceRect, type BoxFaceInfo } from './geometry';
 import { chrome, holoFoil, stickerSheet, glossyPlastic, paperBackfaces } from './materials';
 import { FONTS, DEG, text, sticker, starPath, circlePath, rrPath, fillPath, smallPrint, hazard, grain, holoFill, barcode, type C2D } from './paint';
@@ -428,8 +429,11 @@ function build(bctx: ObjectBuildContext) {
   const bigGeo = bigKnob();
   bigGeo.rotateZ(big.angle);
   bigGeo.scale(big.r, big.r, big.r);
-  bigGeo.translate(big.x, big.y, ZF - 0.004);
-  inner.add(new THREE.Mesh(bigGeo, knobMat));
+  // the big knob sits on its own pivot (it turns in the signature motion)
+  const bigPivot = new THREE.Group();
+  bigPivot.position.set(big.x, big.y, ZF - 0.004);
+  bigPivot.add(new THREE.Mesh(bigGeo, knobMat));
+  inner.add(bigPivot);
 
   // ---------- chrome hardware
   const chromeParts: THREE.BufferGeometry[] = [];
@@ -489,7 +493,7 @@ function build(bctx: ObjectBuildContext) {
 
   // ---------- dark bits: footswitch cap, jack holes, DC jack, rubber feet
   const dark: THREE.BufferGeometry[] = [];
-  dark.push(place(footswitchCap(), [FOOT.x, FOOT.y, ZF - 0.002], [0, 0, 0], 1.12));
+  const capGeo = place(footswitchCap(), [0, 0, 0], [0, 0, 0], 1.12);
   for (const sgn of [1, -1]) {
     const hole = new THREE.CylinderGeometry(0.031, 0.031, 0.04, 24);
     hole.rotateZ(Math.PI / 2);
@@ -506,7 +510,13 @@ function build(bctx: ObjectBuildContext) {
   dark.push(place(new RoundedBoxGeometry(0.15, 0.05, 0.15, 2, 0.015), [-0.18, BH / 2 + 0.012, -0.02]));
   const darkGeo = merge(dark);
   dark.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(darkGeo, glossyPlastic('#2a2b2e', { roughness: 0.45, clearcoat: 0.4 })));
+  const darkMat = glossyPlastic('#2a2b2e', { roughness: 0.45, clearcoat: 0.4 });
+  inner.add(new THREE.Mesh(darkGeo, darkMat));
+  // the footswitch cap is its own mesh: it gets stomped
+  const cap = new THREE.Group();
+  cap.position.set(FOOT.x, FOOT.y, ZF - 0.002);
+  cap.add(new THREE.Mesh(capGeo, darkMat));
+  inner.add(cap);
 
   // ---------- LED (pulses)
   const ledGeo = new THREE.SphereGeometry(0.022, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2);
@@ -556,12 +566,46 @@ function build(bctx: ObjectBuildContext) {
   );
   inner.add(new THREE.Mesh(tapeGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.6, clearcoat: 0.2 }), '#efe6cf')));
 
+  // ---------- signature: a stomp. The footswitch clicks down, the pedal gives under the foot, the
+  // LED fires and repeats like the delay it is (three echoes, each fainter), and the big knob
+  // turns a notch and eases back.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  let acting = false;
+  let led = 0;
+  const sig = signature(1.6, (p, t) => {
+    acting = p < 1;
+    const press = bump(t, 0, 0.06, 0.1, 0.3);
+    cap.position.z = ZF - 0.002 - 0.045 * press;
+    rig.position.z = -0.03 * press;
+    rig.scale.set(1 + 0.012 * press, 1 + 0.012 * press, 1 - 0.05 * press);
+    rig.rotation.x = t > 0.1 ? wobble(t - 0.1, 3, 5) * 0.035 : 0.035 * press;
+    // delay echoes: 0.1s, 0.42s, 0.74s, each 55% of the last
+    led = 0;
+    for (let i = 0; i < 3; i++) {
+      const u = t - 0.1 - i * 0.32;
+      if (u > 0) led += Math.pow(0.55, i) * Math.exp(-u * 9);
+    }
+    const turn = easeOutBack(span(t, 0.1, 0.5), 2) * (1 - smooth(t, 0.75, 1.55));
+    bigPivot.rotation.z = -0.75 * turn;
+    if (p >= 1) {
+      cap.position.z = ZF - 0.002;
+      rig.position.set(0, 0, 0);
+      rig.scale.set(1, 1, 1);
+      rig.rotation.set(0, 0, 0);
+      bigPivot.rotation.z = 0;
+      led = 0;
+    }
+  });
+
   const update = (t: number) => {
     const p = 0.5 + 0.5 * Math.sin(t * 3.2);
-    ledMat.emissiveIntensity = 0.5 + 2.6 * p * p;
+    const idle = 0.5 + 2.6 * p * p;
+    ledMat.emissiveIntensity = acting ? 0.3 + 9 * led : idle;
   };
   update(0);
-  return finish(inner, trash, update, 'motion-pedal');
+  return finish(inner, trash, update, 'motion-pedal', sig);
 }
 
 function paintTape(c: C2D, x: number, y: number, w: number, h: number): void {

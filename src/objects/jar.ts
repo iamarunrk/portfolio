@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import type { ObjectBuildContext, ObjectDef } from './types';
 import { Surface, StickerSheet, type AtlasCell } from './textures';
 import { Trash, finish } from './build';
+import { signature, bump, easeOutBack, smooth, span, wobble } from './signature';
 import { lathe, fillet, stickerPatch, surfaces, merge, type P2 } from './geometry';
 import { glass, gold, stickerSheet, paperBackfaces } from './materials';
 import {
@@ -313,7 +314,10 @@ function build(bctx: ObjectBuildContext) {
   });
   const lidMask = lidPrint.maskTexture();
   const lidMat = gold({ color: '#f1c232', map: lidPrint.colorTexture(), roughnessMap: lidMask, metalnessMap: lidMask, roughness: 1, metalness: 1 });
-  inner.add(new THREE.Mesh(lidGeo, lidMat));
+  // the lid (with its sticker stack, added below) twists off a touch in the signature motion
+  const lid = new THREE.Group();
+  lid.add(new THREE.Mesh(lidGeo, lidMat));
+  inner.add(lid);
 
   // ---------- B&W collage label (full wrap, seam at the back)
   const labelH = LABEL_Y1 - LABEL_Y0;
@@ -478,11 +482,60 @@ function build(bctx: ObjectBuildContext) {
       lift: (_u, v) => 0.35 * Math.pow(THREE.MathUtils.smoothstep(1 - v, 0.55, 1), 2),
     }),
   );
-  const stickersGeo = merge(geos);
+  // the first three are on the jar, the rest on the lid (they move with it)
+  const stickerMat = paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.7 }), '#f1ece2');
+  const jarStickers = merge(geos.slice(0, 3));
+  const lidStickers = merge(geos.slice(3));
   geos.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.7 }), '#f1ece2')));
+  inner.add(new THREE.Mesh(jarStickers, stickerMat));
+  lid.add(new THREE.Mesh(lidStickers, stickerMat));
 
-  return finish(inner, trash, undefined, 'pixel-jam');
+  // ---------- signature: a shake. Like shaking a jar of sweets: two quick shakes side to side,
+  // the jam pixels rattle around inside and settle, and the lid wiggles on its thread.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const rest = pts.map((pt) => ({ p: pt.p.clone(), q: pt.q.clone() }));
+  const jig = pts.map((_, i) => ({ f: 9 + ((i * 37) % 11), ph: (i * 1.618) % (Math.PI * 2), ax: ((i * 13) % 7) / 7 - 0.5, az: ((i * 29) % 5) / 5 - 0.5 }));
+  const off = new THREE.Vector3();
+  const tq = new THREE.Quaternion();
+  const te = new THREE.Euler();
+  const sig = signature(1.5, (p, t) => {
+    // two shakes, then a soft settle
+    const env = smooth(t, 0, 0.08) * (1 - smooth(t, 0.55, 0.95));
+    const sway = Math.sin(t * Math.PI * 2 * 3.2) * env;
+    rig.rotation.z = 0.11 * sway + (t > 0.9 ? wobble(t - 0.9, 2.4, 6) * 0.02 : 0);
+    rig.position.x = 0.35 * sway;
+    rig.position.y = 0.22 * bump(t, 0, 0.1, 0.5, 0.8);
+    lid.rotation.y = 0.18 * Math.sin(t * Math.PI * 2 * 4.1) * env;
+    // the pixels lag behind the glass, bump into each other and settle (heaviest jiggle mid-shake)
+    const rattle = smooth(t, 0.04, 0.2) * (1 - easeOutBack(span(t, 0.6, 1.3), 1.2) * 0.999);
+    for (let i = 0; i < rest.length; i++) {
+      const j = jig[i];
+      const k = rattle * (p < 1 ? 1 : 0);
+      // they sit against the glass: they only ever move inward (and along it), never through it
+      const r = rest[i].p;
+      const len = Math.hypot(r.x, r.z) || 1;
+      const ux = r.x / len, uz = r.z / len;
+      const lift = Math.abs(Math.sin(t * j.f * 0.7 + j.ph)) * 0.26 * k;
+      const inward = (0.12 + 0.5 * Math.abs(Math.sin(t * j.f + j.ph))) * 0.3 * k + lift * 0.8;
+      const along = Math.cos(t * j.f + j.ph) * 0.14 * k;
+      off.set(-ux * inward - uz * along, lift, -uz * inward + ux * along);
+      te.set(j.ax * 1.4 * k * Math.sin(t * 7 + j.ph), 0, j.az * 1.4 * k * Math.cos(t * 6 + j.ph));
+      tq.setFromEuler(te).premultiply(rest[i].q);
+      candies.setMatrixAt(i, m4.compose(off.add(rest[i].p), tq, one));
+    }
+    candies.instanceMatrix.needsUpdate = true;
+    if (p >= 1) {
+      rig.position.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+      lid.rotation.set(0, 0, 0);
+      rest.forEach((r, i) => candies.setMatrixAt(i, m4.compose(r.p, r.q, one)));
+      candies.instanceMatrix.needsUpdate = true;
+    }
+  });
+
+  return finish(inner, trash, undefined, 'pixel-jam', sig);
 }
 
 export const jar: ObjectDef = {

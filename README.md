@@ -3,8 +3,9 @@
 > Once upon a time i was a product designer. Now: founder of **Zeros**.
 
 A portfolio that behaves like a design tool. The homepage is a canvas: sticker-covered 3D
-collectibles float on it, and every visitor can grab, spin and scale them, drag the headline
-around, and restyle the background with live shaders and glass materials. Whatever they make is
+collectibles float on it, and every visitor can click them to see what they do (a camera clicks,
+a can fizzes, a computer types), grab, spin and scale them, drag the headline around, and restyle
+the background with live shaders and glass materials. Whatever they make is
 remembered in their browser.
 
 Scroll, and the camera pulls back: the homepage turns out to be one frame on a design board that
@@ -18,7 +19,7 @@ case-study pages echo it, very quietly, and one button on the board changes it f
 
 | Gesture | Desktop | Touch |
 | --- | --- | --- |
-| Select a toy | click it | tap it |
+| See what a toy does | click it: it plays its signature motion, then its tools appear | tap it |
 | Move it | drag the toy | drag with one finger |
 | Rotate on X / Y / Z | drag a coloured ring (hold <kbd>Shift</kbd> to snap 15°) | drag a ring |
 | Twist in screen plane | <kbd>Shift</kbd> + wheel | two-finger twist |
@@ -29,9 +30,52 @@ case-study pages echo it, very quietly, and one button on the board changes it f
 | Move / scale the headline | drag it, drag its corner handles | tap it first, then drag |
 | Go to the work | scroll down (or **Work**, <kbd>PgDn</kbd>) | swipe up, or pinch in |
 
-The bottom island remixes the canvas: **Shaders** (animated generators), **Gradients**, **Colors**,
-**Glass** (fluted, ribbed, frosted, blur, liquid glass, glass tiles, water, crystal, prism,
-halftone, pixelate, CRT, dither) and **Effects** (grain, vignette, speed).
+One button at the bottom of the homepage (a live swatch of the theme, <kbd>T</kbd>) opens the remix
+island: **Shaders** (animated generators), **Gradients**, **Colors**, **Glass** (fluted, ribbed,
+frosted, blur, liquid glass, glass tiles, water, crystal, prism, halftone, pixelate, CRT, dither) and
+**Effects** (grain, vignette, speed). Pick the open tab again, or <kbd>Esc</kbd>, and it folds back
+into the button.
+
+## Signature motions
+
+Every collectible (the 5 on the homepage and the 18 on the shelf) has a short motion of its own, taken
+from what the thing does in real life. Clicking a toy plays it: on the homepage the rings, knob and
+pill step aside while it plays and fade in when it ends; on the board the name tag follows; in the
+shelf page's close-up it simply plays. Each motion runs 1.5 to 2.6 s and ends exactly in the pose it
+started from, so it can replay forever and never drifts.
+
+| Toy | What it does |
+| --- | --- |
+| Soda can | the tab cracks open and a few fizz drops pop out |
+| Pedal | a foot stomps it, the LED echoes like a delay, the big knob turns |
+| Pixel jar | a shake: the pixels rattle inside the glass |
+| Chips | the bag is squeezed, pops, and three chips hop out and back |
+| Terminal | a burst of typing, the screen fast-forwards, ENTER flashes and the box hops |
+| Mixtape | the reels fast-forward and the tape nods to the beat |
+| Figma tin | the ring-pull lifts, five frames burst out and snap into an auto-layout row |
+| Full-stack burger | an exploded view: every layer lifts apart and stacks back |
+| Instant camera | the shutter clicks, the flash fires, the print slides out and develops |
+| Handheld | the d-pad rocks, the buttons get mashed, the screen levels up |
+| iMac G3 | the CD tray slides out with an iridescent disc and back in |
+| Cold storage | the platter spins up, the head seeks, the LED chatters, it parks |
+| Relax station | a floppy pushes in, the screen flickers, it ejects |
+| Pizza slice | the tip flops like a real slice when it is lifted |
+| Dum biryani | the rice simmers and steam curls off it |
+| Cutting chai | a biscuit dunks, and the froth ripples |
+| Hot fixes | a stadium wave runs through the fries |
+| 2-minute MVP | the fork twirls the noodles, the soup swirls, ding |
+| Paintbox | the brush dabs from pan to pan |
+| Swatch fan | it riffles shut and fans back open |
+| Ship-it box | it crouches, hops, lands with a squash and pops sparkles |
+| First dollar | the card dips, a PIN is punched in (0-0-0-1), APPROVED flashes, the receipt chatters out |
+| Launch day | the flame gutters then roars, it lifts off with a roll and lands back on the pad |
+
+How they are written: `src/objects/signature.ts` holds the contract and a small easing kit. A toy
+builds `signature(duration, (p, s, dt) => ...)` and hands it to `finish()`; the built object gets
+`act()` (play, returns seconds) and `acting()`. Poses are written as functions of time, never
+accumulated, and the frame at `p = 1` restores the rest pose exactly (extras such as sparks, steam,
+a flash are hidden again). Moving parts that were merged into one mesh are split out into their own
+meshes or pivot groups. `/dev/act.html` previews them (see "Dev pages").
 
 ## The theme
 
@@ -93,7 +137,7 @@ The only animated moves are explicit commands: the Work button, the Home chip, *
 | Leave a mark | marker <kbd>P</kbd>, stamps <kbd>S</kbd>, sticky notes <kbd>N</kbd>, move frames <kbd>V</kbd>, undo <kbd>⌘Z</kbd> | same tools in the toolbar |
 | Designer's notes | <kbd>C</kbd> | the speech-bubble tool |
 | Change the theme | the swatch button beside the toolbar, or <kbd>T</kbd> | the swatch button |
-| Play with a collectible | hover it (name tag), drag to spin it, click to twirl it | tap to twirl it |
+| Play with a collectible | hover it (name tag), drag to spin it, click to see its signature motion | tap it |
 
 Marks (ink, stamps, notes, moved frames) are saved in the visitor's own browser. The two other
 cursors on the board are scripted, not live visitors.
@@ -197,6 +241,7 @@ src/
     toys.ts               the shelf collectibles on the board (one shared WebGL canvas)
     caseStudy.ts          builds the case-study page (the board's camera unfolds it out of its frame)
   objects/                the 3D collectibles (one file each) + sticker painting helpers
+    signature.ts          signature motions: the contract and an easing kit (what a toy does when clicked)
     library/              the shelf: 18 more collectibles (on the board and the shelf page)
   showcase/               the shelf page (showcase.html at the repo root)
   bg/                     background engine, GLSL, presets and metadata
@@ -212,6 +257,7 @@ Run `npm run dev`, then open:
 | `/dev/objects.html` | the five toys side by side under studio light | `?only=can`, `?bg=light`, `?rot=y`, `?yaw=30&pitch=10` |
 | `/dev/bg.html` | the background engine on its own | `?base=mesh&mat=fluted`, `?preset=<id>`, `?grid=bases`, `?grid=materials` |
 | `/dev/ui.html` | island, top bar and hint over a live background | `?fresh` (first visit), `?nogl` |
+| `/dev/act.html` | every collectible's signature motion (the dashed square is the board's clip) | `?only=camera`, `?only=camera&strip=1` (8 stills across the motion), `?at=0.6` (one frame), `?loop=1` |
 | `/dev/library.html` | the shelf toys under studio light (QA harness) | `?only=cassette`, `?only=cassette&views=1` (8 angles), `&with=can`, `?bg=pastel`, `?hud=1` |
 | `/showcase.html` | the shelf page itself | `?theme=studio`, `?all=1` (build every card now), `#cassette` (close-up) |
 
@@ -221,7 +267,7 @@ Eighteen more collectibles are modelled and ready. They lie around the work on t
 "The collectibles on the board") but are **not on the homepage canvas**. They live in
 `src/objects/library/` (one file each, file name = kind) and also have their own page,
 [`showcase.html`](showcase.html): drag a toy to spin it, click it for a close-up (drag, scroll or pinch,
-← →), filter by category and switch between the Pastel and Studio backgrounds.
+← →; click it again to play its signature motion), filter by category and switch between the Pastel and Studio backgrounds.
 
 - `npm run dev`, then open `/showcase.html` (`/showcase.html#cassette` opens a close-up directly).
 - `npm run build:showcase` writes `dist-showcase/showcase.html`, one self-contained file you can open
@@ -266,6 +312,7 @@ Shelf toys use the hero toys' build contract (`LibraryDef` is `ObjectDef` with a
 ## Adding a new toy
 
 1. Create `src/objects/<name>.ts` exporting an `ObjectDef` (see `src/objects/types.ts`): build a
-   `THREE.Group` normalised to a bounding sphere of radius ≈ 1, hero side facing +Z.
+   `THREE.Group` normalised to a bounding sphere of radius ≈ 1, hero side facing +Z. Give it a
+   signature motion (`src/objects/signature.ts`) and pass it as the last argument of `finish()`.
 2. Add it to `OBJECTS` in `src/objects/index.ts`, its kind to `ObjectKind`, and a slot in
    `src/layout.ts` (landscape + portrait) and `OBJECT_ORDER` in `src/store.ts`.

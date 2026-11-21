@@ -4,6 +4,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet, canvasTexture } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, bump, easeOutBack, easeInOut, smooth, span, wobble } from '../signature';
 import { lathe, fillet, merge, parametric, place, stickerPatch, tint, flatUV, type P2, type SurfacePoint } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, font, sticker, rrPath, circlePath, fillPath, smallPrint, sealPath, barcode, hexA, type C2D } from '../paint';
@@ -682,7 +683,53 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.42, clearcoat: 0.6 }), '#f3efe6')));
 
   const update = (t: number) => drawScreen(scr, t);
-  return finish(inner, trash, update, 'imac-g3');
+
+  // ---------- signature: the CD tray. It slides out of the slot with a rainbow disc on it, waits a
+  // beat, and slides back in; the screen brightens as it reads the disc.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const slotZ = faceZ(0, SLOT_Y);
+  const tray = new THREE.Group();
+  tray.position.set(0, SLOT_Y - 0.05, slotZ);
+  tray.visible = false;
+  rig.add(tray);
+  const TRAY_D = 9;
+  const trayMesh = new THREE.Mesh(new THREE.BoxGeometry(11.4, 0.42, TRAY_D), new THREE.MeshPhysicalMaterial({ color: '#2a3038', roughness: 0.4, clearcoat: 0.6, clearcoatRoughness: 0.2 }));
+  trayMesh.position.z = -TRAY_D / 2;
+  tray.add(trayMesh);
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(4.6, 4.6, 0.14, 64),
+    new THREE.MeshPhysicalMaterial({ color: '#eef3f8', metalness: 0.7, roughness: 0.22, iridescence: 1, iridescenceIOR: 1.6, iridescenceThicknessRange: [180, 900], clearcoat: 1 }),
+  );
+  disc.position.set(0, 0.3, -TRAY_D / 2 + 0.3);
+  tray.add(disc);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.18, 24), new THREE.MeshStandardMaterial({ color: '#f4f7fa', roughness: 0.35 }));
+  hub.position.copy(disc.position).add(new THREE.Vector3(0, 0.02, 0));
+  tray.add(hub);
+  const glow = screenMat.emissiveIntensity;
+  const OUT = TRAY_D - 0.6;
+  const sig = signature(2.1, (p, t) => {
+    const out = easeOutBack(span(t, 0.05, 0.55), 1.1) * (1 - easeInOut(span(t, 1.05, 1.5)));
+    tray.visible = p < 1 && out > 0.01;
+    tray.position.z = slotZ + OUT * out;
+    // the disc gives a small turn on the tray, like it settles
+    disc.rotation.y = 0.6 * out;
+    // the tray going in: a little bump through the whole machine, and the screen reads the disc
+    const thunk = t > 1.5 ? wobble(t - 1.5, 5, 9) : 0;
+    rig.rotation.x = 0.012 * thunk;
+    screenMat.emissiveIntensity = glow * (1 + 0.45 * bump(t, 1.5, 1.6, 1.7, 2.05) * (0.85 + 0.15 * Math.sin(t * 40)));
+    rig.position.y = 0.25 * bump(t, 0.02, 0.1, 0.12, 0.3) * smooth(t, 0, 0.05);
+    if (p >= 1) {
+      tray.visible = false;
+      tray.position.z = slotZ;
+      rig.rotation.set(0, 0, 0);
+      rig.position.set(0, 0, 0);
+      screenMat.emissiveIntensity = glow;
+    }
+  });
+
+  return finish(inner, trash, update, 'imac-g3', sig);
 }
 
 export const imac: LibraryDef = {

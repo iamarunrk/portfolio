@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, easeInOut, easeOutBack, span, wobble } from '../signature';
 import { lathe, merge, stickerPatch, type SurfacePoint } from '../geometry';
 import { chrome, stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, text, sticker, rrPath, fillPath, starPath, smallPrint, barcode, grain, hexA } from '../paint';
@@ -283,18 +284,10 @@ function build(bctx: ObjectBuildContext) {
   grain(atlas.c, 0, 0, AW, AH, 6000, 0.03, 9);
 
   // ---------- strips fanned around the rivet (pivot at the origin)
-  const strips: THREE.BufferGeometry[] = [];
+  // each strip turns on its own pivot group (the signature motion riffles them)
   const zOf = (i: number) => (i - (N - 1) / 2) * GAP;
   const angleOf = (i: number) => THREE.MathUtils.lerp(FAN_FROM, FAN_TO, i / (N - 1)) + Math.sin(i * 2.7) * 0.8 * DEG;
-  for (let i = 0; i < N; i++) {
-    const g = stripGeometry(i, i === 0 ? COVER_BACK : COMMON_BACK);
-    g.translate(0, -PIVOT, 0);
-    g.rotateZ(angleOf(i));
-    g.translate(0, 0, zOf(i));
-    strips.push(g);
-  }
-  const stripGeo = merge(strips);
-  strips.forEach((g) => g.dispose());
+  const stripGroups: THREE.Group[] = [];
   const mask = atlas.maskTexture();
   const cardMat = new THREE.MeshPhysicalMaterial({
     map: atlas.colorTexture(),
@@ -304,7 +297,16 @@ function build(bctx: ObjectBuildContext) {
     clearcoat: 0.55,
     clearcoatRoughness: 0.12,
   });
-  inner.add(new THREE.Mesh(stripGeo, cardMat));
+  for (let i = 0; i < N; i++) {
+    const g = stripGeometry(i, i === 0 ? COVER_BACK : COMMON_BACK);
+    g.translate(0, -PIVOT, 0);
+    const grp = new THREE.Group();
+    grp.rotation.z = angleOf(i);
+    grp.position.z = zOf(i);
+    grp.add(new THREE.Mesh(g, cardMat));
+    inner.add(grp);
+    stripGroups.push(grp);
+  }
 
   // ---------- chrome rivet through the stack
   const zBack = zOf(0) - THICK / 2 - BEVEL - 0.005;
@@ -338,17 +340,11 @@ function build(bctx: ObjectBuildContext) {
     });
     c.restore();
   }
-  // strip-local (x, distance from the pivot) -> world, on the front face of strip i
+  // strip-local (x, distance from the pivot) on the front face of a strip (the sticker rides in that strip's group)
   const onStrip =
-    (i: number) =>
-    (u: number, v: number): SurfacePoint => {
-      const a = angleOf(i);
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
-      const z = zOf(i) + THICK / 2 + BEVEL;
-      return { p: new THREE.Vector3(u * ca - v * sa, u * sa + v * ca, z), n: new THREE.Vector3(0, 0, 1) };
-    };
-  const newShade = stickerPatch(onStrip(N - 1), 1.55, SL - PIVOT - 4.15, 2.3, 2.3, 14 * DEG, cell.uv, {
+    () =>
+    (u: number, v: number): SurfacePoint => ({ p: new THREE.Vector3(u, v, THICK / 2 + BEVEL), n: new THREE.Vector3(0, 0, 1) });
+  const newShade = stickerPatch(onStrip(), 1.55, SL - PIVOT - 4.15, 2.3, 2.3, 14 * DEG, cell.uv, {
     nx: 10,
     ny: 10,
     offset: 0.006,
@@ -357,18 +353,37 @@ function build(bctx: ObjectBuildContext) {
       return 0.45 * k * k;
     },
   });
-  const holo = stickerPatch(onStrip(1), -1.35, SL - PIVOT - 0.75, 1.5, 1.5, -18 * DEG, cellHolo.uv, {
+  const holo = stickerPatch(onStrip(), -1.35, SL - PIVOT - 0.75, 1.5, 1.5, -18 * DEG, cellHolo.uv, {
     nx: 6,
     ny: 6,
     offset: 0.006,
     lift: (u, v) => 0.12 * Math.pow(THREE.MathUtils.smoothstep(1 - u, 0.6, 1) * THREE.MathUtils.smoothstep(v, 0.5, 1), 2),
   });
-  const stick = merge([newShade, holo]);
-  newShade.dispose();
-  holo.dispose();
-  inner.add(new THREE.Mesh(stick, paperBackfaces(stickerSheet(sheet.surf.colorTexture(), { roughness: 0.35, clearcoat: 0.8 }), '#f4f0e8')));
+  const stickMat = paperBackfaces(stickerSheet(sheet.surf.colorTexture(), { roughness: 0.35, clearcoat: 0.8 }), '#f4f0e8');
+  stripGroups[N - 1].add(new THREE.Mesh(newShade, stickMat));
+  stripGroups[1].add(new THREE.Mesh(holo, stickMat));
 
-  return finish(inner, trash, undefined, 'swatch-fan');
+  // ---------- signature: a riffle. The strips sweep shut onto the top one, one after another like
+  // a deck being closed, then fan back out (a touch wider than before) and settle.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const rest = stripGroups.map((g) => g.rotation.z);
+  const sig = signature(1.7, (p, t) => {
+    stripGroups.forEach((g, i) => {
+      const k = (N - 1 - i) / (N - 1); // the back strips travel furthest, and go first
+      const shut = easeInOut(span(t, 0.02 + (1 - k) * 0.08, 0.38 + (1 - k) * 0.08));
+      const open = easeOutBack(span(t, 0.55 + k * 0.12, 1.15 + k * 0.12), 2.2);
+      g.rotation.z = rest[i] + (FAN_TO - rest[i]) * shut * (1 - open);
+    });
+    rig.rotation.z = t > 1.2 ? wobble(t - 1.2, 3, 7) * 0.02 : 0;
+    if (p >= 1) {
+      stripGroups.forEach((g, i) => (g.rotation.z = rest[i]));
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'swatch-fan', sig);
 }
 
 export const swatches: LibraryDef = {

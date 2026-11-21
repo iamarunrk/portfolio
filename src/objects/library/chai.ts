@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, easeInOut, smooth, span, wobble } from '../signature';
 import { lathe, fillet, resample, stickerPatch, merge, type P2 } from '../geometry';
 import { glass, stickerSheet, paperBackfaces, brushedAluminium } from '../materials';
 import { FONTS, DEG, rng, text, arcText, sticker, circlePath, rrPath, starPath, fillPath, smallPrint, grain } from '../paint';
@@ -339,6 +340,10 @@ function build(bctx: ObjectBuildContext) {
   const BW = 2.25;
   const BH = 3.4;
   const bisGeo = biscuitGeometry(BW, BH, 0.3);
+  // where the biscuit rests, and how it leans (the dunk in the signature motion starts from here)
+  const bisAt = new THREE.Vector3();
+  const bisUp = new THREE.Vector3();
+  const bisRadial = new THREE.Vector3();
   {
     const a = 66 * DEG;
     const radial = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
@@ -349,16 +354,25 @@ function build(bctx: ObjectBuildContext) {
     const right = new THREE.Vector3().crossVectors(up, out).normalize();
     const m = new THREE.Matrix4().makeBasis(right, up, out);
     m.setPosition(base.clone().add(tip).multiplyScalar(0.5).addScaledVector(out, 0.17));
+    bisAt.setFromMatrixPosition(m);
+    bisUp.copy(up);
+    bisRadial.copy(radial);
     const spin = new THREE.Matrix4().makeRotationZ(-5 * DEG);
     bisGeo.applyMatrix4(spin);
     bisGeo.applyMatrix4(m);
   }
-  inner.add(
+  // pivot at the biscuit's own centre, so it can be lifted and turned upright for the dunk
+  bisGeo.translate(-bisAt.x, -bisAt.y, -bisAt.z);
+  const biscuit = new THREE.Group();
+  biscuit.position.copy(bisAt);
+  biscuit.add(
     new THREE.Mesh(
       bisGeo,
       new THREE.MeshPhysicalMaterial({ map: bis.colorTexture(), bumpMap: bis.bumpTexture(), bumpScale: 3, roughness: 0.72, sheen: 0.6, sheenColor: new THREE.Color('#ffe2a8'), sheenRoughness: 0.5 }),
     ),
   );
+  inner.add(biscuit);
+  const frothMesh = inner.children.find((o) => (o as THREE.Mesh).geometry === top) as THREE.Mesh;
 
   // ---------- stickers
   const sheet = new StickerSheet(1024, 704, bctx, 12);
@@ -400,7 +414,36 @@ function build(bctx: ObjectBuildContext) {
 
   // ---------- steam (added after normalising so it doesn't shrink the glass)
   const st = steam(bctx, { base: new THREE.Vector3(0, FILL_Y + SAUCER_Y + 0.15, 0), spread: 1.3, height: 4.6, width: 1.9, count: 3, opacity: 0.42, seed: 9 });
-  const built = finish(inner, trash, st.update, 'cutting-chai');
+  // ---------- signature: the dunk. The biscuit lifts off the glass, stands up over the chai, dips in,
+  // comes out, and goes back to leaning where it was. The froth ripples as it goes in.
+  const upright = new THREE.Quaternion().setFromUnitVectors(bisUp, new THREE.Vector3(0, 1, 0));
+  const still = new THREE.Quaternion();
+  const TEA = FILL_Y + SAUCER_Y;
+  const over = new THREE.Vector3(bisRadial.x * 0.35, TEA + BH / 2 + 0.7, bisRadial.z * 0.35); // above the glass
+  const dunked = new THREE.Vector3(bisRadial.x * 0.35, TEA + BH / 2 - 1.15, bisRadial.z * 0.35); // 1.15 deep in the tea
+  const tmp = new THREE.Vector3();
+  const sig = signature(2.0, (p, t) => {
+    const go = easeInOut(span(t, 0, 0.45)); // rest -> over the glass
+    const dip = easeInOut(span(t, 0.5, 0.72)) * (1 - easeInOut(span(t, 0.95, 1.2))); // down and up
+    const back = easeInOut(span(t, 1.25, 1.75)); // over the glass -> rest
+    const away = go * (1 - back);
+    tmp.copy(bisAt).lerp(over, away);
+    tmp.y += (dunked.y - over.y) * dip;
+    // a little arc on the way (it lifts before it travels)
+    tmp.y += 0.5 * Math.sin(Math.PI * span(t, 0, 0.45)) + 0.5 * Math.sin(Math.PI * span(t, 1.25, 1.75));
+    biscuit.position.copy(tmp);
+    biscuit.quaternion.slerpQuaternions(still, upright, away);
+    // the froth: a ripple when the biscuit goes in, and again when it comes out
+    const ripple = (t > 0.62 ? wobble(t - 0.62, 4, 6) : 0) + (t > 1.05 ? 0.6 * wobble(t - 1.05, 4, 6) : 0);
+    frothMesh.scale.set(1, 1 + 0.25 * ripple * smooth(t, 0.6, 0.65), 1);
+    if (p >= 1) {
+      biscuit.position.copy(bisAt);
+      biscuit.quaternion.identity();
+      frothMesh.scale.set(1, 1, 1);
+    }
+  });
+
+  const built = finish(inner, trash, st.update, 'cutting-chai', sig);
   inner.add(st.mesh);
   trash.add(st.mesh.geometry);
   trash.add(st.mesh.material as THREE.Material);

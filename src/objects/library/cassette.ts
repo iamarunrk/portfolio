@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, bump, easeInOut, smooth, span, wobble } from '../signature';
 import { lathe, merge, parametric, place, ribbon, stickerPatch, surfaces, tint } from '../geometry';
 import { chrome, glossyPlastic, holoFoil, paperBackfaces, stickerSheet } from '../materials';
 import { FONTS, DEG, rng, text, font, sticker, rrPath, rrect, starPath, holoFill, fillPath, smallPrint, grain, hexA, type C2D } from '../paint';
@@ -617,13 +618,45 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.42, clearcoat: 0.55, emissive: '#ffffff', emissiveMap: sheetTex, emissiveIntensity: 0.12 }), '#f1ece0')));
 
   // ---------- idle: the reels turn (constant tape speed, so the small pack spins faster)
+  let ff = 0; // extra tape run from signature motions (the reels keep it: they turn all the time anyway)
+  let ffFrom = 0;
   const update = (t: number) => {
     const v = 0.9;
-    setHubs(0.2 - (t * v) / PACK_L, 0.9 - (t * v) / PACK_R);
+    setHubs(0.2 - (t * v) / PACK_L - ff / PACK_L, 0.9 - (t * v) / PACK_R - ff / PACK_R);
   };
   update(0);
 
-  return finish(inner, trash, update, 'mixtape-vol-0');
+  // ---------- signature: fast-forward. The reels whizz up to speed and brake to a stop with a
+  // little clunk; the shell hums against the motor while it runs.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const RUN = Math.PI * 2 * 4 * PACK_L; // about four turns of the left reel
+  const sig = signature(1.6, (p, t) => {
+    if (t === 0) ffFrom = ff;
+    ff = ffFrom + RUN * easeInOut(span(t, 0, 1.25));
+    const hum = smooth(t, 0.05, 0.25) * (1 - smooth(t, 0.95, 1.25));
+    rig.position.x = 0.012 * Math.sin(t * 95) * hum;
+    rig.position.y = 0.008 * Math.sin(t * 77 + 1) * hum;
+    // the stop: a short clunk
+    const clunk = t > 1.25 ? wobble(t - 1.25, 7, 10) : 0;
+    // and it nods to the beat while it plays: three bobs, left, right, left
+    let nod = 0;
+    let lift = 0;
+    [0.22, 0.58, 0.94].forEach((at, i) => {
+      const b = bump(t, at, at + 0.09, at + 0.12, at + 0.3);
+      nod += (i % 2 ? -1 : 1) * b;
+      lift += b;
+    });
+    rig.rotation.z = 0.035 * clunk + 0.06 * nod;
+    rig.position.y += 0.05 * lift;
+    if (p >= 1) {
+      rig.position.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, update, 'mixtape-vol-0', sig);
 }
 
 export const cassette: LibraryDef = {

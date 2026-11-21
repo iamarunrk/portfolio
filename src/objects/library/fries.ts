@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, arc, span, wobble } from '../signature';
 import { parametric, stickerPatch, type SurfacePoint } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, sticker, starPath, ticketPath, circlePath, fillPath, smallPrint, barcode, factsPanel, grain, halftone } from '../paint';
@@ -514,7 +515,8 @@ function build(bctx: ObjectBuildContext) {
     sheenColor: new THREE.Color('#fff0b0'),
     sheenRoughness: 0.4,
   });
-  inner.add(instanced(fryGeo, fryMat, mats, cols));
+  const fryMesh = instanced(fryGeo, fryMat, mats, cols);
+  inner.add(fryMesh);
 
   // ---------- stickers on the carton
   const sheet = new StickerSheet(1024, 512, bctx, 12);
@@ -542,7 +544,50 @@ function build(bctx: ObjectBuildContext) {
   ]);
   inner.add(new THREE.Mesh(stickers, paperBackfaces(stickerSheet(sheet.surf.colorTexture(), { roughness: 0.42, clearcoat: 0.6 }), '#f4efe4')));
 
-  return finish(inner, trash, undefined, 'hot-fixes');
+  // ---------- signature: the wave. The fries hop up out of the carton left to right, each a beat
+  // after its neighbour, like a stadium wave, and drop back in; the carton squashes as they land.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const fp = new THREE.Vector3();
+  const fq = new THREE.Quaternion();
+  const fs = new THREE.Vector3();
+  const rest = mats.map((m) => {
+    m.decompose(fp, fq, fs);
+    return { p: fp.clone(), q: fq.clone(), s: fs.clone() };
+  });
+  const xs = rest.map((r) => r.p.x);
+  const x0 = Math.min(...xs);
+  const x1 = Math.max(...xs);
+  const HOP = 0.42;
+  const tilt = new THREE.Quaternion();
+  const ZA = new THREE.Vector3(0, 0, 1);
+  const mtx = new THREE.Matrix4();
+  const sig = signature(1.55, (p, t) => {
+    rest.forEach((r, i) => {
+      const k = (r.p.x - x0) / (x1 - x0 || 1);
+      const u = (t - 0.05 - 0.55 * k - ((i * 37) % 7) * 0.012) / HOP;
+      const h = p < 1 ? arc(u) : 0;
+      fp.copy(r.p);
+      fp.y += 1.7 * h * (0.85 + 0.3 * ((i * 13) % 5) / 5);
+      tilt.setFromAxisAngle(ZA, 0.18 * h * (k - 0.5));
+      fq.copy(tilt).multiply(r.q);
+      fryMesh.setMatrixAt(i, mtx.compose(fp, fq, r.s));
+    });
+    fryMesh.instanceMatrix.needsUpdate = true;
+    // the carton: a dip as the wave starts, a squash when the last fries land
+    const land = t > 1.05 ? wobble(t - 1.05, 3.6, 7) : 0;
+    rig.scale.set(1 + 0.03 * land, 1 - 0.045 * land, 1 + 0.03 * land);
+    rig.rotation.z = 0.03 * Math.sin(Math.PI * span(t, 0.05, 1.0)) * (1 - span(t, 0.9, 1.1));
+    if (p >= 1) {
+      rest.forEach((r, i) => fryMesh.setMatrixAt(i, mtx.compose(r.p, r.q, r.s)));
+      fryMesh.instanceMatrix.needsUpdate = true;
+      rig.scale.set(1, 1, 1);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'hot-fixes', sig);
 }
 
 export const fries: LibraryDef = {

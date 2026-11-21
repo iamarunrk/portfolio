@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, bump, smooth, span, wobble } from '../signature';
 import { lathe, fillet, parametric, stickerPatch, surfaces, merge, type P2 } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, arcText, sticker, circlePath, rrPath, smallPrint, barcode, grain, hexA, type C2D } from '../paint';
@@ -970,7 +971,70 @@ function build(bctx: ObjectBuildContext) {
   });
   inner.add(new THREE.Mesh(twineGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.85, sheen: 0.8, sheenColor: new THREE.Color('#f3dcae') })));
 
-  return finish(inner, trash, undefined, 'dum-biryani');
+  // ---------- signature: dum is opened. The heap breathes up like it is simmering, and three slow
+  // curls of steam rise out of it, swell and fade; the pot gives a warm little sway.
+  const parts = inner.children.slice();
+  const heap = new THREE.Group(); // rice mound, grains, garnish, fried onions, leaves (build order 3..7)
+  heap.position.y = MOUND_BASE;
+  for (const o of parts.slice(3, 8)) {
+    o.position.y -= MOUND_BASE;
+    heap.add(o);
+  }
+  inner.add(heap);
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const puffCanvas = document.createElement('canvas');
+  puffCanvas.width = puffCanvas.height = 64;
+  {
+    const c = puffCanvas.getContext('2d')!;
+    const g = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.45, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 64, 64);
+  }
+  const puffTex = new THREE.CanvasTexture(puffCanvas);
+  trash.add(puffTex);
+  const TOP = MOUND_BASE + MOUND_H;
+  const puffs = [
+    { x: -0.9, z: 0.6, t0: 0.25, drift: -0.9 },
+    { x: 0.7, z: -0.3, t0: 0.5, drift: 0.8 },
+    { x: 0.1, z: 0.9, t0: 0.78, drift: -0.3 },
+  ].map((d) => {
+    const mat = new THREE.SpriteMaterial({ map: puffTex, color: '#fffaf0', transparent: true, opacity: 0, depthWrite: false });
+    trash.add(mat);
+    const sp = new THREE.Sprite(mat);
+    sp.visible = false;
+    rig.add(sp);
+    return { ...d, sp, mat };
+  });
+  const LIFE = 1.15;
+  const sig = signature(2.0, (p, t) => {
+    // simmer: the heap rises and settles twice
+    const b = bump(t, 0, 0.12, 0.16, 0.36) + 0.6 * bump(t, 0.36, 0.48, 0.52, 0.72);
+    heap.position.y = MOUND_BASE + 0.35 * b;
+    heap.scale.set(1 - 0.02 * b, 1 + 0.06 * b, 1 - 0.02 * b);
+    rig.rotation.z = t > 0.15 ? wobble(t - 0.15, 1.6, 2.8) * 0.025 : 0;
+    for (const d of puffs) {
+      const u = (t - d.t0) / LIFE;
+      const on = p < 1 && u > 0 && u < 1;
+      d.sp.visible = on;
+      if (!on) continue;
+      d.sp.position.set(d.x + d.drift * u + 0.25 * Math.sin(u * 7), TOP + 0.3 + 3.4 * u, d.z);
+      d.sp.scale.setScalar(1.6 + 3.2 * u);
+      d.mat.opacity = 0.55 * smooth(u, 0, 0.2) * (1 - span(u, 0.35, 1));
+      d.mat.rotation = u * 1.2 * d.drift;
+    }
+    if (p >= 1) {
+      heap.position.y = MOUND_BASE;
+      heap.scale.set(1, 1, 1);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'dum-biryani', sig);
 }
 
 export const biryani: LibraryDef = {

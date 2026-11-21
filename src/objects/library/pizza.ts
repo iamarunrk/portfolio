@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, bump, easeOutCubic, span, wobble } from '../signature';
 import { lathe, parametric, stickerPatch, type P2, type SurfacePoint } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, sticker, ellipsePath, fillPath, smallPrint, starPath, grain, type C2D } from '../paint';
@@ -875,7 +876,40 @@ function build(bctx: ObjectBuildContext) {
   fl.dispose();
   flat.add(new THREE.Mesh(paperGeo, paperBackfaces(stickerSheet(stickers.surf.colorTexture(), { roughness: 0.45, clearcoat: 0.5 }), '#f4efe4')));
 
-  return finish(inner, trash, undefined, 'pizza-slice');
+  // ---------- signature: the flop. Like picking up a slice: the tip sags, springs back up past
+  // level, and wobbles to rest, cheese and all. Bends the geometry
+  // itself (in the slice's own frame: tip at the origin, crust at r = R), positions only.
+  const bodies = flat.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh);
+  const rest = bodies.map((m) => (m.geometry.getAttribute('position').array as Float32Array).slice());
+  const lift = new THREE.Group(); // the whole slice is raised a little as it is picked up
+  while (inner.children.length) lift.add(inner.children[0]);
+  inner.add(lift);
+  const bendBy = (amount: number) => {
+    bodies.forEach((m, i) => {
+      const pos = m.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const a = pos.array as Float32Array;
+      const r0 = rest[i];
+      for (let j = 0; j < a.length; j += 3) {
+        const x = r0[j], z = r0[j + 2];
+        const s = Math.min(1, Math.hypot(x, z) / R);
+        a[j + 1] = r0[j + 1] - amount * Math.pow(1 - s, 2.2);
+      }
+      pos.needsUpdate = true;
+    });
+  };
+  const sig = signature(1.6, (p, t) => {
+    // sag in, spring back past level, settle
+    const sag = easeOutCubic(span(t, 0, 0.28)) * (1 - span(t, 0.28, 0.4)) + (t > 0.4 ? wobble(t - 0.4, 2.2, 4.2) * 0.55 : 0);
+    bendBy(p >= 1 ? 0 : 3.0 * sag);
+    lift.position.y = 0.5 * bump(t, 0, 0.18, 0.5, 1.2);
+    lift.rotation.z = 0.04 * bump(t, 0, 0.2, 0.4, 1.0);
+    if (p >= 1) {
+      lift.position.set(0, 0, 0);
+      lift.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'pizza-slice', sig);
 }
 
 /** Orientation for a pick along `dir` whose flag front faces `facing` and flies towards `fly`. */

@@ -26,6 +26,7 @@ import {
   type C2D,
 } from '../paint';
 import { SoftBox } from './_founder';
+import { signature, arc, bump, easeOutBack, span, wobble } from '../signature';
 
 /*
  * FIRST DOLLAR: a chunky candy-pink card terminal that just took its first payment.
@@ -163,7 +164,7 @@ function paintBody(s: Surface, f: Record<'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz'
 
 // ------------------------------------------------------------------ screen
 
-function drawScreen(surf: Surface, on: boolean): void {
+function drawScreen(surf: Surface, on: boolean, pin?: number): void {
   const c = surf.c;
   const Wd = surf.w;
   const Hd = surf.h;
@@ -183,7 +184,22 @@ function drawScreen(surf: Surface, on: boolean): void {
   c.fillText('●●●●', Wd - 22, 16);
   c.textAlign = 'left';
   text(c, '$1.00', Wd / 2, 142, { size: 104, family: FONTS.archivoBlack, align: 'center', color: '#f4fff0' });
-  if (on) {
+  if (pin !== undefined) {
+    // mid-payment: the PIN pad is waiting, a dot per digit typed
+    text(c, 'ENTER PIN', Wd / 2, 198, { size: 30, family: FONTS.archivoBlack, align: 'center', color: LIME });
+    for (let i = 0; i < 4; i++) {
+      c.beginPath();
+      c.arc(Wd / 2 - 54 + i * 36, 226, 9, 0, Math.PI * 2);
+      if (i < pin) {
+        c.fillStyle = '#f4fff0';
+        c.fill();
+      } else {
+        c.strokeStyle = 'rgba(215,255,58,0.6)';
+        c.lineWidth = 3;
+        c.stroke();
+      }
+    }
+  } else if (on) {
     fillPath(c, rrPath(Wd / 2 - 158, 160, 316, 54, 27), LIME);
     text(c, 'APPROVED ✓', Wd / 2, 198, { size: 34, family: FONTS.archivoBlack, align: 'center', color: INK });
   } else {
@@ -718,14 +734,16 @@ function build(bctx: ObjectBuildContext) {
   const cardGeo = cardGeometry();
   cardGeo.rotateX(-0.06);
   cardGeo.translate(0, H / 2 + CARD.h / 2 - CARD.inserted, 0);
-  inner.add(new THREE.Mesh(cardGeo, cardMat));
+  const card = new THREE.Mesh(cardGeo, cardMat);
+  inner.add(card);
 
   // ---------- receipt curling out of the side
   const receiptMat = paperBackfaces(
     new THREE.MeshPhysicalMaterial({ map: sheetTex, alphaTest: 0.5, roughness: 0.55, metalness: 0, sheen: 0.4, sheenColor: new THREE.Color('#ffffff'), sheenRoughness: 0.6 }),
     '#f2efe6',
   );
-  inner.add(new THREE.Mesh(receiptGeometry(W / 2 * (1 - 0.05 * ((RECEIPT.y + H / 2) / H)) + 0.02), receiptMat));
+  const receipt = new THREE.Mesh(receiptGeometry(W / 2 * (1 - 0.05 * ((RECEIPT.y + H / 2) / H)) + 0.02), receiptMat);
+  inner.add(receipt);
 
   // ---------- stickers
   const [luPX] = box.dims.px;
@@ -756,16 +774,91 @@ function build(bctx: ObjectBuildContext) {
 
   // ---------- animation: APPROVED blinks, the LED breathes
   let lastOn = true;
+  let busy = false;
   const update = (t: number) => {
     const on = Math.floor(t * 1.6) % 2 === 0;
-    if (on !== lastOn) {
+    if (!busy && on !== lastOn) {
       lastOn = on;
       drawScreen(scr, on);
       scrTex.needsUpdate = true;
     }
     ledMat.emissiveIntensity = 1.2 + 1.4 * (0.5 + 0.5 * Math.sin(t * 4));
   };
-  return finish(inner, trash, update, 'first-dollar');
+  // ---------- signature: a payment. The card dips into the slot, a PIN is punched in (0-0-0-1:
+  // customer #1), ✓ goes down, the screen flashes APPROVED, the terminal does a happy little
+  // wiggle, the LED blinks and the receipt chatters out a little further. Then the card pops back.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const keyRest: THREE.Matrix4[] = [];
+  for (let i = 0; i < nKeys; i++) {
+    const km = new THREE.Matrix4();
+    keys.getMatrixAt(i, km);
+    keyRest.push(km);
+  }
+  const PIN = [13, 13, 13, 0]; // 0 0 0 1
+  const OK = 15;
+  const press = new Float32Array(nKeys);
+  const km = new THREE.Matrix4();
+  let shownPin = -1;
+  const showPin = (n: number | null) => {
+    const k = n === null ? -2 : n;
+    if (k === shownPin) return;
+    shownPin = k;
+    drawScreen(scr, true, n === null ? undefined : n);
+    scrTex.needsUpdate = true;
+  };
+  const T_PIN = 0.42;
+  const STEP = 0.2;
+  const T_OK = T_PIN + PIN.length * STEP + 0.08;
+  const T_YES = T_OK + 0.1;
+  const sig = signature(2.6, (p, t) => {
+    busy = p < 1;
+    // card: pushed down into the slot, held while paying, pops back up with a bounce
+    card.position.y = t < 2.0 ? -0.24 * Math.sqrt(span(t, 0.0, 0.3)) : -0.24 * (1 - easeOutBack(span(t, 2.0, 2.45), 2.4));
+    // keys: one press per digit, then the green ✓
+    press.fill(0);
+    PIN.forEach((k, i) => {
+      const a = T_PIN + i * STEP;
+      press[k] = Math.max(press[k], bump(t, a, a + 0.04, a + 0.09, a + 0.17));
+    });
+    press[OK] = bump(t, T_OK, T_OK + 0.05, T_OK + 0.14, T_OK + 0.26);
+    for (let i = 0; i < nKeys; i++) {
+      km.copy(keyRest[i]);
+      if (press[i] > 0) km.multiply(new THREE.Matrix4().makeTranslation(0, 0, -0.034 * press[i]));
+      keys.setMatrixAt(i, km);
+    }
+    keys.instanceMatrix.needsUpdate = true;
+    // screen: PIN dots while typing, then APPROVED with a flash
+    if (p >= 1) showPin(null);
+    else if (t < T_YES) showPin(t < T_PIN - 0.1 ? 0 : Math.min(4, PIN.filter((_, i) => t > T_PIN + i * STEP + 0.05).length));
+    else showPin(null);
+    const flash = t > T_YES ? bump(t, T_YES, T_YES + 0.05, T_YES + 0.12, T_YES + 0.6) : 0;
+    scrMat.emissiveIntensity = 1.35 + 1.5 * flash;
+    if (t > T_YES && p < 1) ledMat.emissiveIntensity = 1.2 + 2.6 * (0.5 + 0.5 * Math.cos((t - T_YES) * 26)) * (1 - span(t, T_YES + 0.5, T_YES + 0.9));
+    // the happy wiggle and a small hop
+    const w = t > T_YES ? wobble(t - T_YES, 3.2, 4.2) : 0;
+    rig.rotation.z = 0.07 * w;
+    rig.position.y = 0.16 * arc(span(t, T_YES, T_YES + 0.42));
+    // the receipt prints a little further out, chattering, then settles back to rest
+    const out = span(t, T_YES + 0.05, T_YES + 0.6) * (1 - span(t, 2.1, 2.6));
+    receipt.position.x = 0.07 * out + 0.006 * Math.sin(t * 70) * bump(t, T_YES + 0.05, T_YES + 0.1, T_YES + 0.5, T_YES + 0.6);
+    receipt.rotation.x = 0.04 * Math.sin(t * 13) * out;
+    if (p >= 1) {
+      card.position.y = 0;
+      receipt.position.x = 0;
+      receipt.rotation.x = 0;
+      rig.rotation.z = 0;
+      rig.position.y = 0;
+      scrMat.emissiveIntensity = 1.35;
+      for (let i = 0; i < nKeys; i++) keys.setMatrixAt(i, keyRest[i]);
+      keys.instanceMatrix.needsUpdate = true;
+      lastOn = true;
+      shownPin = -1;
+    }
+  });
+
+  return finish(inner, trash, update, 'first-dollar', sig);
 }
 
 export const cardreader: LibraryDef = {

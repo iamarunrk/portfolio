@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, easeOutBack, easeInOut, span, wobble } from '../signature';
 import { lathe, parametric, type P2 } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, sticker, circlePath, ellipsePath, fillPath, smallPrint, grain, type C2D } from '../paint';
@@ -331,9 +332,6 @@ function build(bctx: ObjectBuildContext) {
   };
   warp(topGeo, lumpy(0.12));
   warp(botGeo, lumpy(0.08));
-  const bunGeo = mergeSimple([topGeo, botGeo]);
-  topGeo.dispose();
-  botGeo.dispose();
   const bunMat = new THREE.MeshPhysicalMaterial({
     map: bun.colorTexture(),
     bumpMap: bun.bumpTexture(),
@@ -346,7 +344,10 @@ function build(bctx: ObjectBuildContext) {
     sheenColor: new THREE.Color('#ffd7a0'),
     sheenRoughness: 0.5,
   });
-  inner.add(new THREE.Mesh(bunGeo, bunMat));
+  // top and bottom bun are separate meshes: the stack comes apart in the signature motion
+  const topBun = new THREE.Mesh(topGeo, bunMat);
+  const botBun = new THREE.Mesh(botGeo, bunMat);
+  inner.add(topBun, botBun);
 
   // ---------- sesame seeds on the dome
   {
@@ -385,7 +386,9 @@ function build(bctx: ObjectBuildContext) {
       cols.push(new THREE.Color('#f6e6c2').offsetHSL((rand() - 0.5) * 0.02, 0, (rand() - 0.5) * 0.08));
     }
     const seedMat = new THREE.MeshPhysicalMaterial({ color: '#ffffff', roughness: 0.45, clearcoat: 0.5, clearcoatRoughness: 0.3, sheen: 0.3, sheenColor: new THREE.Color('#fff4dc') });
-    inner.add(instanced(seed, seedMat, mats, cols));
+    const seeds = instanced(seed, seedMat, mats, cols);
+    seeds.userData.lift = 1;
+    inner.add(seeds);
   }
 
   // ---------- fillings atlas
@@ -600,7 +603,40 @@ function build(bctx: ObjectBuildContext) {
   const paper = fl;
   inner.add(new THREE.Mesh(paper, paperBackfaces(stickerSheet(sheet.surf.colorTexture(), { roughness: 0.45, clearcoat: 0.45 }), '#f2ede3')));
 
-  return finish(inner, trash, undefined, 'full-stack-burger');
+  // ---------- signature: the exploded view. Every layer of the stack lifts apart (the higher, the
+  // further: the top bun most), hangs for a beat like a diagram, then restacks with a soft squash.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  // how far each part rises, as a fraction of the spread: fillings by their height in the stack,
+  // the top bun and its seeds all the way, the pick (with its flag) only a little
+  const liftOf = (o: THREE.Object3D) => {
+    if (o.userData.lift != null) return o.userData.lift as number;
+    if (o === topBun) return 1;
+    if (o === botBun) return 0;
+    const g = (o as THREE.Mesh).geometry;
+    g.computeBoundingBox();
+    const y = (g.boundingBox!.min.y + g.boundingBox!.max.y) / 2;
+    if (y > BUN_TOP) return 0.22; // the pick and its flag
+    return Math.min(0.85, Math.max(0.1, (y - PATTY_Y0) / (BUN_Y0 - PATTY_Y0)));
+  };
+  const layers = rig.children.map((o) => ({ o, k: liftOf(o) }));
+  const SPREAD = 3.6;
+  const sig = signature(1.7, (p, t) => {
+    const open = easeOutBack(span(t, 0, 0.42), 1.5) * (1 - easeInOut(span(t, 0.85, 1.2)));
+    for (const l of layers) l.o.position.y = SPREAD * open * l.k;
+    // landing: a squash through the whole stack, then a wobble
+    const land = t > 1.2 ? wobble(t - 1.2, 3.2, 6.5) : 0;
+    rig.scale.set(1 + 0.05 * land, 1 - 0.08 * land, 1 + 0.05 * land);
+    rig.rotation.y = 0.12 * open;
+    if (p >= 1) {
+      for (const l of layers) l.o.position.y = 0;
+      rig.scale.set(1, 1, 1);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'full-stack-burger', sig);
 }
 
 export const burger: LibraryDef = {

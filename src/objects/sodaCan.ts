@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { ObjectBuildContext, ObjectDef } from './types';
 import { Surface, StickerSheet } from './textures';
 import { Trash, finish } from './build';
+import { signature, bump as pulse, easeOutBack, smooth, span, wobble } from './signature';
 import { lathe, fillet, stickerPatch, surfaces, merge, flatUV, place, tint, type P2 } from './geometry';
 import { stickerSheet, paperBackfaces } from './materials';
 import {
@@ -413,6 +414,9 @@ function pullTab(): THREE.BufferGeometry {
 function build(bctx: ObjectBuildContext) {
   const trash = new Trash();
   const inner = new THREE.Group();
+  // everything hangs off `body`, so the signature motion can squash and rock the can about its base
+  const body = new THREE.Group();
+  inner.add(body);
 
   const prof = canProfile();
   const [bottomP, midP, topP] = splitProfile(prof, PRINT_Y0, PRINT_Y1);
@@ -435,7 +439,7 @@ function build(bctx: ObjectBuildContext) {
     clearcoat: 1,
     clearcoatRoughness: 0.04,
   });
-  inner.add(new THREE.Mesh(lathe(midP, { segments: SEG }), labelMat));
+  body.add(new THREE.Mesh(lathe(midP, { segments: SEG }), labelMat));
 
   // ---------- aluminium (lid + base + tab + rivet) with an embossing bump map
   const bump = new Surface(1024, 512, bctx, { bump: { base: 0.5, density: 1 }, density: 0.01 });
@@ -445,12 +449,12 @@ function build(bctx: ObjectBuildContext) {
   const baseUV = (x: number, _y: number, z: number): [number, number] => [0.75 + (x / RM) * 0.25, 0.5 + (z / RM) * 0.5];
   const topGeo = lathe(topP, { segments: SEG, uv: lidUV });
   const baseGeo = lathe(bottomP, { segments: SEG, uv: baseUV });
+  // the pull tab is its own mesh, hinged at the rivet (it lifts in the signature motion)
   const tab = flatUV(pullTab(), 0.5, 0.98);
-  place(tab, [0, LID_Y + 0.04, -0.1], [-0.14, 0, 0]);
-  tab.rotateY(MOUTH_TURN);
+  place(tab, [0, 0, -0.1], [-0.14, 0, 0]);
   const rivet = flatUV(new THREE.SphereGeometry(0.2, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), 0.5, 0.98);
   place(rivet, [0, LID_Y + 0.03, 0], [0, 0, 0], [1, 0.5, 1]);
-  const aluParts = [topGeo, baseGeo, tab, rivet];
+  const aluParts = [topGeo, baseGeo, rivet];
   const aluGeo = merge(aluParts);
   aluParts.forEach((g) => g.dispose());
   const aluMat = new THREE.MeshPhysicalMaterial({
@@ -462,7 +466,14 @@ function build(bctx: ObjectBuildContext) {
     clearcoat: 0.3,
     clearcoatRoughness: 0.1,
   });
-  inner.add(new THREE.Mesh(aluGeo, aluMat));
+  body.add(new THREE.Mesh(aluGeo, aluMat));
+  const tabTurn = new THREE.Group();
+  tabTurn.position.set(0, LID_Y + 0.04, 0);
+  tabTurn.rotation.y = MOUTH_TURN;
+  const tabHinge = new THREE.Group();
+  tabHinge.add(new THREE.Mesh(tab, aluMat));
+  tabTurn.add(tabHinge);
+  body.add(tabTurn);
 
   // ---------- the open mouth: dark rim + blue drink, just above the recessed panel
   const outer = new THREE.Shape();
@@ -482,7 +493,7 @@ function build(bctx: ObjectBuildContext) {
   mouth.rotateY(MOUTH_TURN);
   // the drink: saturated blue, only a soft sheen so it doesn't mirror the top softbox
   const mouthMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.42, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.3 });
-  inner.add(new THREE.Mesh(mouth, mouthMat));
+  body.add(new THREE.Mesh(mouth, mouthMat));
 
   // ---------- peeling light-blue warning sticker on the left side
   const sheet = new StickerSheet(640, 448, bctx, 14);
@@ -520,9 +531,58 @@ function build(bctx: ObjectBuildContext) {
     },
   });
   const peelMat = paperBackfaces(stickerSheet(sheetTex, { roughness: 0.45, clearcoat: 0.5 }), '#eef6ff');
-  inner.add(new THREE.Mesh(peel, peelMat));
+  body.add(new THREE.Mesh(peel, peelMat));
 
-  return finish(inner, trash, undefined, 'zeros-soda');
+  // ---------- signature: "psst". The tab cracks up and snaps back, the can gives a little jolt,
+  // and a few drops of fizz hop out of the mouth and fall back.
+  const dropGeo = new THREE.SphereGeometry(1, 12, 8);
+  const dropMats = [
+    new THREE.MeshPhysicalMaterial({ color: '#2a6bff', roughness: 0.12, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05 }),
+    new THREE.MeshPhysicalMaterial({ color: ICE, roughness: 0.18, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05 }),
+  ];
+  const mouthAt = new THREE.Vector3(0, LID_Y + 0.12, -1.12).applyAxisAngle(new THREE.Vector3(0, 1, 0), MOUTH_TURN);
+  const G = 15; // pulls the drops back down the can's own axis
+  const drops = Array.from({ length: 11 }, (_, i) => {
+    const mesh = new THREE.Mesh(dropGeo, dropMats[i % 3 === 2 ? 1 : 0]);
+    mesh.visible = false; // only shown while the motion plays (and kept out of the bounds)
+    body.add(mesh);
+    const a = i * 2.399963; // golden-angle fan, so the spray is even
+    const out = 0.5 + ((i * 7) % 5) * 0.22;
+    return {
+      mesh,
+      delay: 0.1 + ((i * 5) % 11) * 0.02,
+      vx: Math.cos(a) * out,
+      vz: Math.sin(a) * out,
+      vy: 5.2 + ((i * 3) % 7) * 0.34,
+      size: 0.13 + ((i * 4) % 5) * 0.028,
+    };
+  });
+  const sig = signature(1.5, (p, t) => {
+    // tab: cracks up fast, drops back with a tiny bounce
+    const up = easeOutBack(span(t, 0, 0.13), 2.2) * (1 - smooth(t, 0.2, 0.36));
+    const tick = t > 0.36 ? wobble(t - 0.36, 9, 9) * 0.05 : 0;
+    tabHinge.rotation.x = -0.6 * up - tick;
+    // can: a short squash as it cracks, then a rock that dies out
+    const jolt = pulse(t, 0.0, 0.07, 0.09, 0.3);
+    body.scale.set(1 + 0.022 * jolt, 1 - 0.035 * jolt, 1 + 0.022 * jolt);
+    body.rotation.z = t > 0.08 ? wobble(t - 0.08, 3.4, 4.2) * 0.045 * (1 - smooth(p, 0.8, 1)) : 0;
+    for (const d of drops) {
+      const life = (2 * d.vy) / G; // up and back to the lid
+      const u = t - d.delay;
+      const on = p < 1 && u > 0 && u < life;
+      d.mesh.visible = on;
+      if (!on) continue;
+      d.mesh.position.set(mouthAt.x + d.vx * u, mouthAt.y + d.vy * u - 0.5 * G * u * u, mouthAt.z + d.vz * u);
+      d.mesh.scale.setScalar(d.size * smooth(u, 0, 0.06) * (1 - smooth(u, life * 0.8, life)));
+    }
+    if (p >= 1) {
+      tabHinge.rotation.x = 0;
+      body.scale.set(1, 1, 1);
+      body.rotation.z = 0;
+    }
+  });
+
+  return finish(inner, trash, undefined, 'zeros-soda', sig);
 }
 
 export const sodaCan: ObjectDef = {

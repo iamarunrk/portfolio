@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Signature } from './signature';
 import type { BuiltObject } from './types';
 
 /** Collects anything with a dispose() so a factory can free it all at once. */
@@ -90,12 +91,18 @@ export function normalise(inner: THREE.Group): { root: THREE.Group; radius: numb
   return { root, radius: rr };
 }
 
-/** Standard tail of every factory: normalise, gather disposables. */
+/**
+ * Standard tail of every factory: normalise, gather disposables.
+ * `sig` is the object's signature motion (signature.ts): it plays through `update` after `act()`.
+ * Anything it shows only while playing (droplets, a flash...) must be in `inner` already and
+ * `visible = false`, so it is disposed with the rest and does not change the bounds.
+ */
 export function finish(
   inner: THREE.Group,
   trash: Trash,
   update?: (t: number, dt: number) => void,
   name?: string,
+  sig?: Signature,
 ): BuiltObject {
   const { root, radius } = normalise(inner);
   if (name) root.name = name;
@@ -103,7 +110,15 @@ export function finish(
   return {
     root,
     radius,
-    update,
+    update: sig
+      ? (t, dt) => {
+          update?.(t, dt);
+          sig.update(dt);
+        }
+      : update,
+    animated: !!update,
+    act: sig ? () => sig.play() : undefined,
+    acting: sig ? () => sig.active : undefined,
     dispose: () => trash.dispose(),
   };
 }

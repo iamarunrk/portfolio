@@ -20,8 +20,20 @@ export interface BuiltObject {
   root: THREE.Group;
   /** Bounding-sphere radius of `root` in its own units (≈ 1.0 after normalising). */
   radius: number;
-  /** Optional per-frame animation (blinking LEDs, a typing screen...). `t` in seconds. */
+  /**
+   * Per-frame animation: the object's own idle life (blinking LEDs, a typing screen...) and its
+   * signature motion while that plays. `t` in seconds. Call it every frame.
+   */
   update?: (t: number, dt: number) => void;
+  /** True when the object animates by itself all the time (not only during its signature motion). */
+  animated?: boolean;
+  /**
+   * The signature motion: what this object does when it is clicked (see signature.ts).
+   * Starts it and returns the seconds until it is done; `update` plays it.
+   */
+  act?: () => number;
+  /** True while the signature motion is playing. */
+  acting?: () => boolean;
   /** Free geometries, materials and textures created by the factory. */
   dispose: () => void;
 }

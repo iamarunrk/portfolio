@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import type { ObjectBuildContext, ObjectDef } from './types';
 import { Surface, StickerSheet, canvasTexture, type AtlasCell } from './textures';
 import { Trash, finish } from './build';
+import { signature, bump, wobble } from './signature';
 import { merge, place, stickerPatch, surfaces } from './geometry';
 import { chrome, stickerSheet, paperBackfaces } from './materials';
 import { FONTS, DEG, rng, text, font, sticker, rrPath, circlePath, fillPath, barcode, smiley, smallPrint, hexA, type C2D } from './paint';
@@ -422,13 +423,58 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.6 }), '#f3efe6')));
 
   // ---------- typing animation (redraw at <= 15 fps)
+  // `ahead` lets the signature motion type faster than the idle loop (the screen keeps it)
+  let ahead = 0;
+  let typing = false;
   const update = (t: number) => {
-    if (t - st.last < 1 / 15 && t >= st.last) return;
+    if (t - st.last < 1 / 15 && t >= st.last && !typing) return;
     st.last = t;
-    drawScreen(st, t);
+    drawScreen(st, t + ahead);
   };
 
-  return finish(inner, trash, update, 'once-upon-os');
+  // ---------- signature: a burst of typing. Keys go down one after another, quick and uneven
+  // like real fingers, then a heavier ENTER: the screen flashes and the machine gives a little hop.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const restKeys = Array.from({ length: 12 }, (_, i) => {
+    const mm = new THREE.Matrix4();
+    keys.getMatrixAt(i, mm);
+    return mm;
+  });
+  // which key, when (s): a fast, slightly uneven run, then ENTER (the last key of the bottom row)
+  const strokes: [number, number][] = [
+    [7, 0.0], [2, 0.08], [9, 0.15], [4, 0.24], [1, 0.3], [8, 0.39], [3, 0.46], [10, 0.55], [0, 0.62], [5, 0.7],
+  ];
+  const ENTER: [number, number] = [11, 0.86];
+  const press = new THREE.Matrix4();
+  const baseIntensity = screenMat.emissiveIntensity;
+  const sig = signature(1.6, (p, t, dt) => {
+    typing = p < 1 && t < ENTER[1] + 0.1;
+    if (typing) ahead += dt * 9; // the screen races ahead while the keys go
+    const depth = new Array(12).fill(0);
+    for (const [k, at] of strokes) depth[k] = Math.max(depth[k], bump(t, at, at + 0.03, at + 0.07, at + 0.16));
+    depth[ENTER[0]] = Math.max(depth[ENTER[0]], bump(t, ENTER[1], ENTER[1] + 0.05, ENTER[1] + 0.1, ENTER[1] + 0.26) * 1.3);
+    for (let i = 0; i < 12; i++) {
+      keys.setMatrixAt(i, p >= 1 ? restKeys[i] : press.makeTranslation(0, -0.085 * depth[i], 0).multiply(restKeys[i]));
+    }
+    keys.instanceMatrix.needsUpdate = true;
+    // ENTER: the screen flares, the terminal hops
+    const flash = t > ENTER[1] + 0.04 ? Math.exp(-(t - ENTER[1] - 0.04) * 6) : 0;
+    screenMat.emissiveIntensity = baseIntensity * (1 + 0.9 * flash) * (1 - 0.06 * Math.sin(t * 60) * flash);
+    const hop = t > ENTER[1] + 0.06 ? wobble(t - ENTER[1] - 0.06, 2.2, 5.5) : 0;
+    rig.position.y = 0.06 * Math.max(0, hop);
+    rig.rotation.z = -0.02 * hop;
+    // typing makes it tremble a hair
+    rig.rotation.x = 0.006 * Math.sin(t * 70) * (t < 0.8 ? 1 : 0);
+    if (p >= 1) {
+      screenMat.emissiveIntensity = baseIntensity;
+      rig.position.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, update, 'once-upon-os', sig);
 }
 
 export const terminal: ObjectDef = {

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { ObjectBuildContext, ObjectDef } from './types';
 import { Surface, StickerSheet, type AtlasCell } from './textures';
 import { Trash, finish } from './build';
+import { signature, arc, bump, easeOutBack, span, wobble } from './signature';
 import { parametric, stickerPatch, merge, type SurfacePoint } from './geometry';
 import { stickerSheet, paperBackfaces } from './materials';
 import { FONTS, DEG, rng, text, sticker, rrPath, fillPath, smallPrint, barcode, factsPanel, halftone, grain, hexA, type C2D } from './paint';
@@ -531,7 +532,49 @@ function build(bctx: ObjectBuildContext) {
   geos.forEach((g) => g.dispose());
   inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.4, clearcoat: 0.6 }), '#f3efe6')));
 
-  return finish(inner, trash, undefined, 'prototype-chips');
+  // ---------- signature: squeeze and pop. A pinch squeezes the air, the bag puffs back out with
+  // a crinkly wobble, and three chips hop out over the top seal and drop back in.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const chipGeo = new THREE.SphereGeometry(1, 18, 6, 0, Math.PI * 2, 0, 0.75);
+  const chipMat = new THREE.MeshStandardMaterial({ color: '#f6c23e', roughness: 0.55, metalness: 0, emissive: '#7a4a00', emissiveIntensity: 0.08, side: THREE.DoubleSide });
+  const chipsOut = [
+    { dx: -0.22, z: 0.06, h: 0.36, t0: 0.2, rx: 3.4, rz: 1.4, s: 1 },
+    { dx: 0.05, z: -0.03, h: 0.46, t0: 0.26, rx: -2.8, rz: -2.2, s: 1.15 },
+    { dx: 0.28, z: 0.02, h: 0.3, t0: 0.33, rx: 2.4, rz: 2.6, s: 0.9 },
+  ].map((d) => {
+    const mesh = new THREE.Mesh(chipGeo, chipMat);
+    mesh.visible = false;
+    rig.add(mesh);
+    return { ...d, mesh };
+  });
+  const TOP = H / 2 - 0.04;
+  const AIR = 0.62;
+  const sig = signature(1.55, (p, t) => {
+    const squeeze = bump(t, 0, 0.14, 0.15, 0.24);
+    const puff = t > 0.2 ? easeOutBack(span(t, 0.2, 0.36), 2.4) * (1 - span(t, 0.36, 1.3)) + wobble(t - 0.2, 4.2, 4.5) * 0.25 : 0;
+    const sz = 1 - 0.28 * squeeze + 0.16 * puff;
+    const sx = 1 - 0.05 * squeeze + 0.03 * puff;
+    rig.scale.set(sx, 1 / Math.sqrt(sx * sz), sz);
+    rig.rotation.z = t > 0.2 ? wobble(t - 0.2, 3.1, 5) * 0.04 : 0;
+    for (const c of chipsOut) {
+      const u = (t - c.t0) / AIR;
+      const on = p < 1 && u > 0 && u < 1;
+      c.mesh.visible = on;
+      if (!on) continue;
+      c.mesh.position.set(c.dx * (0.6 + 0.4 * u), TOP + c.h * arc(u), c.z);
+      c.mesh.rotation.set(c.rx * u, 0.4, c.rz * u);
+      const k = Math.min(1, u * 8, (1 - u) * 8);
+      c.mesh.scale.set(0.15 * c.s * k, 0.05 * c.s * k, 0.12 * c.s * k);
+    }
+    if (p >= 1) {
+      rig.scale.set(1, 1, 1);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'prototype-chips', sig);
 }
 
 function inCell(sheet: StickerSheet, cell: AtlasCell, fn: (c: C2D) => void): void {

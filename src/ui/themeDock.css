@@ -124,3 +124,39 @@
     transform: none;
   }
 }
+
+/* The homepage's theme button: the remix island at rest (Liquid Glass, lensed by the background). */
+.ui.th-home {
+  position: fixed;
+  z-index: 50;
+  left: 0;
+  right: 0;
+  bottom: var(--ui-safe-b);
+  margin-inline: auto;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  transform-origin: 50% 100%;
+  cursor: pointer;
+}
+.ui.th-home[data-hidden] {
+  transform: translateY(10px) scale(0.86);
+}
+.ui.th-home:active {
+  transform: scale(0.93);
+}
+.th-home .th-btn__thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
+}
+.th-home:hover .th-btn__thumb {
+  transform: rotate(-6deg) scale(1.08);
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-home:hover .th-btn__thumb {
+    transform: none;
+  }
+}

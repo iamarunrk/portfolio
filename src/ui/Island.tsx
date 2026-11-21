@@ -554,9 +554,11 @@ function DiceButton() {
 
 export interface IslandProps {
   /**
-   * 'home' (default): the homepage island, always there, driven by the store, lensed as Liquid Glass.
-   * 'board': the same controls for the board and case pages, summoned by the theme button. It is
-   * controlled (`tab`, `onTab`), exists only while open, and is plain frosted glass (no WebGL behind it).
+   * Either way the island only exists while it is open: at rest it is folded into a single theme
+   * button (src/ui/ThemeDock.tsx), which opens it on the tab that owns the current look.
+   * 'home' (default): the homepage island, driven by the store, lensed as Liquid Glass.
+   * 'board': the same controls for the board and case pages. It is controlled (`tab`, `onTab`)
+   * and is plain frosted glass (no WebGL behind it).
    */
   variant?: 'home' | 'board';
   tab?: IslandTab | null;
@@ -564,9 +566,9 @@ export interface IslandProps {
 }
 
 /**
- * Bottom-centre "island": a live mini-swatch, five tabs and a dice. A tab opens
- * its panel, which grows upward inside the same glass container. The active
- * tab again, Esc, or a click that starts outside the island collapses it.
+ * Bottom-centre "island": a live mini-swatch, five tabs and a dice, with the open tab's panel
+ * growing upward inside the same glass container. The active tab again, Esc, or a click that
+ * starts outside the island folds it back into the theme button.
  */
 export function Island({ variant = 'home', tab: tabProp = null, onTab }: IslandProps = {}) {
   const board = variant === 'board';
@@ -575,7 +577,7 @@ export function Island({ variant = 'home', tab: tabProp = null, onTab }: IslandP
   const uiHidden = useStore((s) => s.uiHidden);
   const tab = board ? tabProp : storeTab;
   const setTab = board && onTab ? onTab : storeSetTab;
-  const hidden = board ? tab == null : uiHidden;
+  const hidden = board ? tab == null : uiHidden || tab == null;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);

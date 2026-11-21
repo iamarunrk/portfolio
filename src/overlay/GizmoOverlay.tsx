@@ -43,8 +43,11 @@ export function GizmoOverlay() {
     registerOverlay((f: GizmoFrame) => {
       const o = f.object;
       setStyle(objG.current, 'display', o ? '' : 'none');
-      setStyle(selPill.current, 'opacity', o && !o.moving ? '1' : '0');
-      setStyle(selPill.current, 'pointerEvents', o && !o.moving ? 'auto' : 'none');
+      // while a toy does its signature motion the tooling waits, then fades in
+      setStyle(objG.current, 'opacity', o && o.veiled ? '0' : '1');
+      const pillOn = !!o && !o.moving && !o.veiled;
+      setStyle(selPill.current, 'opacity', pillOn ? '1' : '0');
+      setStyle(selPill.current, 'pointerEvents', pillOn ? 'auto' : 'none');
       if (!o && !f.title && !f.pill && last.current.obj === 'none') return;
       last.current.obj = o || f.title || f.pill ? 'some' : 'none';
       if (o) {
@@ -146,7 +149,7 @@ export function GizmoOverlay() {
   return (
     <div className={`overlay${uiHidden ? ' is-hidden' : ''}`} aria-hidden={false}>
       <svg className="overlay-svg" width="100%" height="100%">
-        <g ref={objG} style={{ display: 'none' }}>
+        <g ref={objG} className="gizmo" style={{ display: 'none' }}>
           <circle ref={silhouette} className="silhouette" />
           <path ref={wedge} className="wedge" />
           {AXES.map((a) => (

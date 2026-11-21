@@ -18,6 +18,11 @@
   overflow: visible;
 }
 
+/* the object tooling (rings, knob): steps back while a toy does its signature motion, then fades in */
+.gizmo {
+  transition: opacity 0.32s ease;
+}
+
 /* ── rotation rings ─────────────────────────────────────────── */
 .silhouette {
   fill: none;

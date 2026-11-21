@@ -113,6 +113,8 @@ export class InteractionController {
   private title0 = { nx: 0, ny: 0, s: 1, d0: 1 };
   // taps
   private lastTap = { t: 0, id: '', x: 0, y: 0 };
+  /** A toy that was just pressed and newly selected: its tooling stays back until we know it is a click or a drag. */
+  private tapHoldId: string | null = null;
   // wheel commit debounce
   private wheelTimer: ReturnType<typeof setTimeout> | undefined;
   private wheelTarget: LiveObject | null = null;
@@ -408,6 +410,7 @@ export class InteractionController {
       }
       case 'object': {
         const o = registry.get(hit.id)!;
+        this.tapHoldId = st.selected !== o.id ? o.id : null;
         if (st.selected !== o.id) st.select(o.id);
         st.bringToFront(o.id);
         this.mode = 'move';
@@ -699,7 +702,8 @@ export class InteractionController {
     }
 
     if (this.mode === 'move' && !this.moved && this.target) {
-      // A tap. Double-tap/double-click gives the toy a playful spin.
+      // A click: the toy does its signature motion (a camera clicks, a can fizzes...), and its
+      // tooling shows once it is done. Double-tap/double-click adds a playful spin.
       const now = performance.now();
       const o = this.target;
       if (this.lastTap.id === o.id && now - this.lastTap.t < 340 && Math.hypot(x - this.lastTap.x, y - this.lastTap.y) < 24) {
@@ -707,8 +711,10 @@ export class InteractionController {
         this.lastTap.t = 0;
       } else {
         this.lastTap = { t: now, id: o.id, x, y };
+        o.built?.act?.();
       }
     }
+    this.tapHoldId = null;
 
     if (this.target && this.moved) this.commit(this.target);
     if ((this.mode === 'title-move' || this.mode === 'title-scale') && this.moved) {
@@ -920,6 +926,11 @@ export class InteractionController {
       }
 
       const hoverAxis = this.mode === 'idle' && this.hover?.type === 'ring' ? this.hover.axis : null;
+      // click → signature motion → tooling: the rings, knob and pill wait while the toy performs,
+      // unless the visitor is already dragging something
+      const handling = this.mode !== 'idle' && this.moved;
+      const pressed = this.tapHoldId === o.id && this.mode === 'move' && !this.moved;
+      const veiled = !handling && (pressed || !!o.built?.acting?.());
       gizmoFrame.object = {
         id: o.id,
         cx,
@@ -933,8 +944,10 @@ export class InteractionController {
         knobHover: this.mode === 'idle' && this.hover?.type === 'scale',
         wedge,
         moving: (this.mode === 'move' || this.mode === 'pinch') && this.target === o && this.moved,
+        veiled,
       };
-      this.gizmoValidFor = o.id;
+      // hidden handles can't be grabbed
+      this.gizmoValidFor = veiled ? null : o.id;
     }
 
     // Title frame box.

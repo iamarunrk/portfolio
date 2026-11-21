@@ -7,7 +7,7 @@ import { useStore } from './store';
 import { Hint } from './ui/Hint';
 import { Island } from './ui/Island';
 import { ScrollCue } from './ui/ScrollCue';
-import { ThemeDock } from './ui/ThemeDock';
+import { ThemeButton, ThemeDock } from './ui/ThemeDock';
 import { TopBar } from './ui/TopBar';
 import { useThemeEcho } from './theme/live';
 
@@ -50,6 +50,7 @@ export default function App() {
         <TitleFrame />
         <GizmoOverlay />
         <TopBar />
+        <ThemeButton />
         <Island />
         <Hint />
         <ScrollCue />

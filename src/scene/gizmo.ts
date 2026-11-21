@@ -62,6 +62,8 @@ export interface GizmoFrame {
     knobHover: boolean;
     wedge: { d: string; axis: Axis } | null;
     moving: boolean;
+    /** The toy is doing its signature motion (or was only just pressed): the tooling waits its turn. */
+    veiled: boolean;
   };
   title: null | {
     x: number;

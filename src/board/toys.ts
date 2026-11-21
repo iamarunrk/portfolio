@@ -26,7 +26,8 @@ import type { ToySpot } from './layout';
  *  - Built toys outlive a board rebuild (turning a phone lays the board out again, not the toys).
  *
  * Each toy has a hit area in the board (a DOM square under the canvas): hover lifts it and shows its
- * name, a drag spins it, a click gives it a twirl. With the marker, stamps or notes they step aside.
+ * name, a drag spins it, and a click plays its signature motion (src/objects/signature.ts), then
+ * shows its name tag. With the marker, stamps or notes they step aside.
  */
 
 const TAU = Math.PI * 2;
@@ -311,9 +312,27 @@ export function mountBoardToys(o: { under: HTMLElement; top: HTMLElement; stage:
     it.label.querySelector('b')!.textContent = def.name;
     it.label.querySelector('span')!.textContent = def.tagline;
   };
-  const spin = (it: Item) => {
-    it.vYaw += 13 * (Math.random() < 0.5 ? -1 : 1);
+  /** A click: the toy does its signature motion, then its name tag shows (a twirl if it has none). */
+  const tagTimers = new Map<Item, number>();
+  const perform = (it: Item) => {
     dirty = true;
+    const act = it.toy.built?.act;
+    if (!act) {
+      it.vYaw += 13 * (Math.random() < 0.5 ? -1 : 1);
+      return;
+    }
+    const secs = act();
+    describe(it);
+    it.label.classList.remove('is-on');
+    clearTimeout(tagTimers.get(it));
+    tagTimers.set(
+      it,
+      window.setTimeout(() => {
+        it.label.classList.add('is-on');
+        // with a mouse it stays while hovered; after a tap it steps back by itself
+        tagTimers.set(it, window.setTimeout(() => !it.hovering && it.label.classList.remove('is-on'), 2600));
+      }, secs * 1000 + 80),
+    );
   };
 
   for (const it of items) {
@@ -328,7 +347,7 @@ export function mountBoardToys(o: { under: HTMLElement; top: HTMLElement; stage:
       if (e.pointerType !== 'mouse') return;
       it.hovering = true;
       describe(it);
-      if (it.toy.state === 'ready') it.label.classList.add('is-on');
+      if (it.toy.state === 'ready' && !it.toy.built?.acting?.()) it.label.classList.add('is-on');
       dirty = true;
     });
     on(it.el, 'pointerleave', () => {
@@ -383,12 +402,12 @@ export function mountBoardToys(o: { under: HTMLElement; top: HTMLElement; stage:
       press = null;
       it.dragging = false;
       it.el.classList.remove('is-dragging');
-      if (click) spin(it);
+      if (click) perform(it);
     };
     on(it.el, 'pointerup', (e) => end(e, false));
     on(it.el, 'pointercancel', (e) => end(e, true));
     on(it.el, 'click', () => {
-      if (touched && it.toy.state === 'ready') spin(it);
+      if (touched && it.toy.state === 'ready') perform(it);
     });
   }
 
@@ -473,7 +492,8 @@ export function mountBoardToys(o: { under: HTMLElement; top: HTMLElement; stage:
       !near(it.pitch, 0) ||
       !near(it.sx, it.px * lean) ||
       !near(it.sy, it.py * lean) ||
-      (!!it.toy.built?.update && it.size >= 140)
+      !!it.toy.built?.acting?.() ||
+      (!!it.toy.built?.animated && it.size >= 140)
     );
   }
 
@@ -559,7 +579,7 @@ export function mountBoardToys(o: { under: HTMLElement; top: HTMLElement; stage:
         const sw = Math.min(cw, x + size) - sx, sh = Math.min(ch, vy + size) - sy;
         if (sw <= 0 || sh <= 0) continue;
         r.setScissor(sx, sy, sw, sh);
-        if (size >= 60) built.update?.(clock, dt);
+        if (size >= 60 || built.acting?.()) built.update?.(clock, dt);
         r.render(it.toy.scene, cam);
       }
       r.setScissorTest(false);
@@ -567,6 +587,7 @@ export function mountBoardToys(o: { under: HTMLElement; top: HTMLElement; stage:
     destroy() {
       ac.abort();
       clearTimeout(warmT);
+      tagTimers.forEach((id) => clearTimeout(id));
       if (picker === next) picker = null;
       if (attached && gl) {
         gl.canvas.remove();

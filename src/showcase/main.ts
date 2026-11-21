@@ -545,10 +545,12 @@ function start(gl: THREE.WebGLRenderer): void {
     else if (!e) closeInspector();
   });
 
-  // drag to spin, wheel / pinch to zoom, double-click to reset
+  // drag to spin, wheel / pinch to zoom, double-click to reset, click to play the signature motion
   const pointers = new Map<number, { x: number; y: number; t: number }>();
   let pinch = 0;
+  let tapFrom: { x: number; y: number } | null = null;
   stageEl.addEventListener('pointerdown', (ev) => {
+    tapFrom = pointers.size === 0 ? { x: ev.clientX, y: ev.clientY } : null;
     stageEl.setPointerCapture(ev.pointerId);
     pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, t: ev.timeStamp });
     insp.dragging = true;
@@ -595,7 +597,13 @@ function start(gl: THREE.WebGLRenderer): void {
     if (pointers.size === 0) {
       insp.dragging = false;
       stageEl.classList.remove('is-dragging');
+      // a click (no drag): the toy does its signature motion
+      if (ev.type === 'pointerup' && tapFrom && Math.hypot(ev.clientX - tapFrom.x, ev.clientY - tapFrom.y) < 5) {
+        (insp.built ?? insp.entry?.built)?.act?.();
+        insp.idle = 0;
+      }
     }
+    tapFrom = null;
   };
   stageEl.addEventListener('pointerup', release);
   stageEl.addEventListener('pointercancel', release);

@@ -4,6 +4,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, bump, easeOutBack, easeOutCubic, smooth, span, wobble } from '../signature';
 import { atlasRoundedBox, boxFaceDims, lathe, merge, parametric, place, stickerPatch, surfaces, tint, type BoxFaceInfo, type FaceName, type FaceRect, type P2 } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, arcText, sticker, rrPath, circlePath, fillPath, smallPrint, smiley, hazard, barcode, hexA, type C2D } from '../paint';
@@ -340,7 +341,8 @@ function build(bctx: ObjectBuildContext) {
     { segments: 40 },
   );
   btn.rotateX(Math.PI / 2);
-  plastic.push(tint(onFront(btn, -4.6, 7.35, -0.1), YELLOW));
+  // the shutter button is its own mesh (it clicks in the signature motion)
+  const btnGeo = tint(onFront(btn, -4.6, 7.35, -0.1), YELLOW);
   plastic.push(tint(onFront(new THREE.CylinderGeometry(1.15, 1.15, 0.2, 40).rotateX(Math.PI / 2), -4.6, 7.35, 0.0), '#3a3d42'));
   const gear = (r: number, teeth: number) =>
     lathe(
@@ -364,7 +366,10 @@ function build(bctx: ObjectBuildContext) {
   plastic.push(tint(place(new THREE.BoxGeometry(12, 4.8, 0.18), [0, 8.1, -1.3]), '#1f7a4a'));
   const plasticGeo = merge(plastic);
   plastic.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(plasticGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.32, clearcoat: 0.8, clearcoatRoughness: 0.12 })));
+  const plasticMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.32, clearcoat: 0.8, clearcoatRoughness: 0.12 });
+  inner.add(new THREE.Mesh(plasticGeo, plasticMat));
+  const shutter = new THREE.Mesh(btnGeo, plasticMat);
+  inner.add(shutter);
 
   // ---------- the print sliding out of the slot, curling down
   const printSurf = new Surface(704, 496, bctx, { density: 1 });
@@ -385,7 +390,8 @@ function build(bctx: ObjectBuildContext) {
     { uv: (u, v) => [u, v] },
   );
   const printMat = paperBackfaces(new THREE.MeshPhysicalMaterial({ map: printSurf.colorTexture(), roughness: 0.35, clearcoat: 0.9, clearcoatRoughness: 0.08 }), '#efeee8');
-  inner.add(new THREE.Mesh(printGeo, printMat));
+  const print = new THREE.Mesh(printGeo, printMat);
+  inner.add(print);
 
   // ---------- stickers (+ the badge face and the flash window)
   const sheet = new StickerSheet(1024, 640, bctx, 12);
@@ -493,7 +499,71 @@ function build(bctx: ObjectBuildContext) {
   stickerGeos.forEach((g) => g.dispose());
   inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.55, clearcoat: 0, specularIntensity: 0.25, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }), '#f3efe6')));
 
-  return finish(inner, trash, undefined, 'instant-zero');
+  // ---------- signature: say cheese. The shutter clicks, the print slips back into the slot, the
+  // flash fires, and a fresh print whirrs out and develops from milky white into the picture.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const tiltF = Math.atan2(0.6, 6.3);
+  const up = new THREE.Vector3(0, Math.cos(tiltF), -Math.sin(tiltF));
+  const fwd = new THREE.Vector3(0, Math.sin(tiltF), Math.cos(tiltF));
+  // the flash: an additive glow over the flash window, invisible at rest
+  const flashMat = new THREE.MeshBasicMaterial({ color: '#fffbe8', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const flash = new THREE.Mesh(new THREE.PlaneGeometry(3.1, 2.6), flashMat);
+  flash.position.set(5.2, 5.5, FRONT_Z + 0.42).addScaledVector(up, 4.55);
+  flash.rotation.x = -tiltF;
+  flash.visible = false;
+  rig.add(flash);
+  // a soft round glow around it (radial falloff painted once, tiny)
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = glowCanvas.height = 64;
+  const gc = glowCanvas.getContext('2d')!;
+  const grad = gc.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  gc.fillStyle = grad;
+  gc.fillRect(0, 0, 64, 64);
+  const glowTex = new THREE.CanvasTexture(glowCanvas);
+  const haloMatInit = flashMat.clone();
+  haloMatInit.map = glowTex;
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), haloMatInit);
+  halo.position.copy(flash.position).addScaledVector(fwd, 0.05);
+  halo.rotation.x = -tiltF;
+  halo.visible = false;
+  rig.add(halo);
+  const haloMat = halo.material as THREE.MeshBasicMaterial;
+  const btnRest = shutter.position.clone();
+  const IN = 4.6; // how far the print slips back into the slot (it leaves the camera going forward)
+  const sig = signature(2.0, (p, t) => {
+    // shutter: click in, spring out
+    const click = bump(t, 0, 0.05, 0.08, 0.18);
+    shutter.position.copy(btnRest).addScaledVector(fwd, -0.32 * click);
+    // print: back into the slot, then out again (decelerating, like the rollers let go)
+    const back = smooth(t, 0.02, 0.22);
+    const out = easeOutCubic(span(t, 0.5, 1.25));
+    print.position.z = -IN * back * (1 - out);
+    // the new print develops: milky white first, the picture comes through
+    const milk = smooth(t, 0.45, 0.5) * (1 - smooth(t, 0.95, 1.95));
+    printMat.emissive.setScalar(0.85 * milk);
+    // flash
+    const f = t > 0.3 ? Math.exp(-(t - 0.3) * 11) * smooth(t, 0.28, 0.31) : 0;
+    flash.visible = halo.visible = f > 0.01 && p < 1;
+    flashMat.opacity = Math.min(1, 1.4 * f);
+    haloMat.opacity = 0.8 * f;
+    halo.scale.setScalar(0.6 + 0.5 * easeOutBack(span(t, 0.3, 0.5)));
+    // a tiny recoil at the flash, a nod as the print comes out
+    rig.rotation.x = -0.035 * click + (t > 0.3 ? wobble(t - 0.3, 2.5, 6) * 0.02 : 0);
+    if (p >= 1) {
+      shutter.position.copy(btnRest);
+      print.position.set(0, 0, 0);
+      printMat.emissive.setScalar(0);
+      flash.visible = halo.visible = false;
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'instant-zero', sig);
 }
 
 /** rrect path without beginPath (for strokes inside a clip). */

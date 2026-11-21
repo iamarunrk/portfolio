@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet, type AtlasCell } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, arc, easeInOut, easeOutBack, smooth, span, wobble } from '../signature';
 import { lathe, fillet, stickerPatch, surfaces, merge, flatUV, type P2, type SurfacePoint } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, text, arcText, font, measure, sticker, rrPath, rrect, circlePath, starPath, fillPath, barcode, factsPanel, smallPrint, grain, hexA, type C2D } from '../paint';
@@ -407,12 +409,13 @@ function build(bctx: ObjectBuildContext) {
   const pull = flatUV(ringPull(), 0.5, 0.99);
   pull.rotateX(-0.075); // loop end lifts a little off the lid
   pull.rotateY(0.12);
-  pull.translate(0.2, lidY(1.9) + 0.05, -1.9);
+  // (the ring pull is its own mesh, hinged at the rivet: it lifts in the signature motion)
+  const PULL_AT = new THREE.Vector3(0.2, lidY(1.9) + 0.05, -1.9);
   const rivet = flatUV(new THREE.SphereGeometry(0.3, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0.5, 0.99);
   rivet.scale(1, 0.45, 1);
   rivet.translate(0.2, lidY(1.9) + 0.03, -1.9);
-  const tinGeo = merge([body, pull, rivet]);
-  [body, pull, rivet].forEach((g) => g.dispose());
+  const tinGeo = merge([body, rivet]);
+  [body, rivet].forEach((g) => g.dispose());
   const tinMat = new THREE.MeshPhysicalMaterial({
     color: '#e7eaef',
     metalness: 1,
@@ -423,6 +426,10 @@ function build(bctx: ObjectBuildContext) {
     clearcoatRoughness: 0.1,
   });
   inner.add(new THREE.Mesh(tinGeo, tinMat));
+  const pullHinge = new THREE.Group();
+  pullHinge.position.copy(PULL_AT);
+  pullHinge.add(new THREE.Mesh(pull, tinMat));
+  inner.add(pullHinge);
 
   // ---------- printed label
   const circ = 2 * Math.PI * LABEL_R;
@@ -460,7 +467,53 @@ function build(bctx: ObjectBuildContext) {
   geos.forEach((g) => g.dispose());
   inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.38, clearcoat: 0.7 }), '#f1eee7')));
 
-  return finish(inner, trash, undefined, 'figma-tin');
+  // ---------- signature: auto layout. The ring pull flicks up, five frames in Figma's colours pop
+  // out of the tin, snap into a neat, evenly spaced row above it, hold, and drop back in.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const COLORS = ['#f24e1e', '#ff7262', '#a259ff', '#1abcfe', '#0acf83'];
+  const frameGeo = new RoundedBoxGeometry(1.0, 1.0, 0.24, 3, 0.2);
+  const GAP = 1.22;
+  const ROW_Y = TOP + 2.0;
+  const frames = COLORS.map((c, i) => {
+    const mesh = new THREE.Mesh(frameGeo, new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.1 }));
+    mesh.visible = false;
+    rig.add(mesh);
+    // a scattered spot (where they burst to) and their place in the row
+    const a = i * 2.399 + 0.6;
+    const scatter = new THREE.Vector3(Math.cos(a) * 1.7, ROW_Y + 0.6 + ((i * 3) % 4) * 0.35, Math.sin(a) * 0.9);
+    const row = new THREE.Vector3((i - 2) * GAP, ROW_Y, 0.4);
+    return { mesh, scatter, row, spin: (i % 2 ? 1 : -1) * (1.5 + i * 0.3) };
+  });
+  const lid = new THREE.Vector3(0, LID_Y, 0);
+  const pos = new THREE.Vector3();
+  const sig = signature(2.1, (p, t) => {
+    pullHinge.rotation.x = -0.55 * smooth(t, 0, 0.1) * (1 - easeInOut(span(t, 0.25, 0.5)));
+    frames.forEach((f, i) => {
+      const t0 = 0.12 + i * 0.04;
+      const out = span(t, t0, t0 + 0.35); // burst out
+      const snap = easeOutBack(span(t, 0.55 + i * 0.03, 0.9 + i * 0.03), 1.8); // into the row
+      const home = easeInOut(span(t, 1.35 + (4 - i) * 0.04, 1.72 + (4 - i) * 0.04)); // back in (last out, first in)
+      const on = p < 1 && out > 0 && home < 1;
+      f.mesh.visible = on;
+      if (!on) return;
+      pos.copy(lid).lerp(f.scatter, out);
+      pos.y += 0.6 * arc(out) * (1 - out);
+      pos.lerp(f.row, snap);
+      pos.lerp(lid, home);
+      f.mesh.position.copy(pos);
+      f.mesh.rotation.set(0.3 * (1 - snap), f.spin * (1 - snap) * out, 0.4 * (1 - snap) * out);
+      f.mesh.scale.setScalar(Math.min(1, out * 4) * (1 - home * home));
+    });
+    rig.rotation.z = t > 1.8 ? wobble(t - 1.8, 4, 9) * 0.03 : 0;
+    if (p >= 1) {
+      pullHinge.rotation.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'figma-tin', sig);
 }
 
 export const figma: LibraryDef = {

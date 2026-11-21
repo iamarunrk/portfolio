@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet, canvasTexture } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, arc, bump, wobble } from '../signature';
 import { lathe, merge, place, ribbon, stickerPatch, surfaces, tint } from '../geometry';
 import { chrome, glossyPlastic, holoFoil, paperBackfaces, stickerSheet } from '../materials';
 import { FONTS, DEG, rng, text, sticker, rrPath, rrect, starPath, holoFill, fillPath, smallPrint, barcode, grain, type C2D } from '../paint';
@@ -633,7 +634,8 @@ function build(bctx: ObjectBuildContext) {
 
   // ---------- D-pad, gaskets, wheel, power slider, ports (dark plastic, vertex coloured)
   const darkParts: THREE.BufferGeometry[] = [tint(panelGeo, '#0b0c0e')];
-  darkParts.push(place(dpad(), [DPAD.x, DPAD.y, front + 0.02]));
+  // the D-pad is its own mesh (it rocks in the signature motion)
+  const dpadGeo = dpad();
   darkParts.push(tint(place(new THREE.CircleGeometry(1.42, 48), [DPAD.x, DPAD.y, front + 0.01]), '#3a3d44'));
   for (const b of [BTN_S, BTN_D]) darkParts.push(tint(place(new THREE.CircleGeometry(BTN_R + 0.1, 40), [b.x, b.y, front + 0.01]), '#3a3d44'));
   {
@@ -661,7 +663,12 @@ function build(bctx: ObjectBuildContext) {
   }
   const darkGeo = merge(darkParts);
   darkParts.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(darkGeo, glossyPlastic('#ffffff', { vertexColors: true, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.08 })));
+  const darkMat = glossyPlastic('#ffffff', { vertexColors: true, roughness: 0.26, clearcoat: 1, clearcoatRoughness: 0.08 });
+  inner.add(new THREE.Mesh(darkGeo, darkMat));
+  const pad = new THREE.Group();
+  pad.position.set(DPAD.x, DPAD.y, front + 0.02);
+  pad.add(new THREE.Mesh(dpadGeo, darkMat));
+  inner.add(pad);
 
   // ---------- sticker sheet (also carries the S / D button art)
   const sheet = new StickerSheet(1024, 1024, bctx, 14);
@@ -671,10 +678,11 @@ function build(bctx: ObjectBuildContext) {
   // ---------- S / D buttons
   const bs = place(button(0, cells.btn.uv), [BTN_S.x, BTN_S.y, front + 0.02]);
   const bd = place(button(0.5, cells.btn.uv), [BTN_D.x, BTN_D.y, front + 0.02]);
-  const btnGeo = merge([bs, bd]);
-  bs.dispose();
-  bd.dispose();
-  inner.add(new THREE.Mesh(btnGeo, new THREE.MeshPhysicalMaterial({ map: sheetTex, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.08 })));
+  // separate meshes: they press in the signature motion
+  const btnMat = new THREE.MeshPhysicalMaterial({ map: sheetTex, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.08 });
+  const btnS = new THREE.Mesh(bs, btnMat);
+  const btnD = new THREE.Mesh(bd, btnMat);
+  inner.add(btnS, btnD);
 
   // ---------- chrome: back screws, port rims
   const chr: THREE.BufferGeometry[] = [];
@@ -764,7 +772,41 @@ function build(bctx: ObjectBuildContext) {
   };
   update(0);
 
-  return finish(inner, trash, update, 'pocket-zero');
+  // ---------- signature: a combo. Up, right on the D-pad, S, D: the screen flashes like a level-up
+  // and the console gives a happy little hop.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const glow = screenMat.emissiveIntensity;
+  const tap = (t: number, at: number) => bump(t, at, at + 0.04, at + 0.08, at + 0.17);
+  const sig = signature(1.7, (p, t) => {
+    const up = tap(t, 0.0);
+    const right = tap(t, 0.2);
+    pad.rotation.x = -0.22 * up;
+    pad.rotation.y = 0.22 * right;
+    btnS.position.z = -0.16 * tap(t, 0.4);
+    btnD.position.z = -0.16 * tap(t, 0.56);
+    // level up: a bright flash and two blinks
+    const lv = t > 0.66 ? Math.exp(-(t - 0.66) * 5) : 0;
+    const blink = t > 0.66 && t < 1.1 ? 0.5 + 0.5 * Math.cos((t - 0.66) * Math.PI * 2 * 4.5) : 1;
+    screenMat.emissiveIntensity = glow * (1 + 0.9 * lv * blink);
+    // the hop, with a squash on take-off and on landing
+    const hop = arc((t - 0.7) / 0.42);
+    const squash = bump(t, 0.62, 0.68, 0.7, 0.76) + (t > 1.12 ? wobble(t - 1.12, 3.4, 7) * 0.7 : 0);
+    rig.position.y = 0.95 * hop;
+    rig.scale.set(1 + 0.04 * squash, 1 - 0.05 * squash, 1);
+    rig.rotation.z = 0.05 * hop * Math.sin((t - 0.7) * 7.5);
+    if (p >= 1) {
+      pad.rotation.set(0, 0, 0);
+      btnS.position.z = btnD.position.z = 0;
+      screenMat.emissiveIntensity = glow;
+      rig.position.set(0, 0, 0);
+      rig.scale.set(1, 1, 1);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, update, 'pocket-zero', sig);
 }
 
 export const handheld: LibraryDef = {

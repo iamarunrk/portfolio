@@ -4,6 +4,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet, canvasTexture } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, bump, easeOutBack, easeInCubic, span, wobble } from '../signature';
 import { lathe, fillet, merge, parametric, place, stickerPatch, surfaces, tint, type P2, type SurfacePoint } from '../geometry';
 import { stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, arcText, sticker, rrPath, circlePath, fillPath, smallPrint, starPath, hexA, type C2D } from '../paint';
@@ -365,7 +366,8 @@ function build(bctx: ObjectBuildContext) {
   btn.push(tint(place(new RoundedBoxGeometry(1.5, 0.75, 0.7, 2, 0.25), [8.9, 3.5, fz]), '#d8d0bf'));
   btn.push(tint(place(new THREE.SphereGeometry(0.28, 12, 8), [-7.6, 4.1, fz + 0.05]), '#46e08c'));
   // a hot-pink floppy half way into the drive
-  btn.push(tint(place(new RoundedBoxGeometry(9.0, 0.34, 9.3, 2, 0.12), [4.6, 5.0, fz + 3.9 - 4.65]), '#ff4fb8'));
+  // (its own mesh: it goes in and out in the signature motion)
+  const floppyGeo = tint(place(new RoundedBoxGeometry(9.0, 0.34, 9.3, 2, 0.12), [4.6, 5.0, fz + 3.9 - 4.65]), '#ff4fb8');
   {
     const knob = lathe(
       [
@@ -381,7 +383,10 @@ function build(bctx: ObjectBuildContext) {
   }
   const btnGeo = merge(btn);
   btn.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(btnGeo, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.08 })));
+  const btnMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.08 });
+  inner.add(new THREE.Mesh(btnGeo, btnMat));
+  const floppy = new THREE.Mesh(floppyGeo, btnMat);
+  inner.add(floppy);
 
   // ---------- keycaps: 2 x 4 big tapered caps
   const kw = 5.0;
@@ -435,12 +440,8 @@ function build(bctx: ObjectBuildContext) {
     },
     { cy: SCR.cy, nr: 10, nphi: 80 },
   );
-  inner.add(
-    new THREE.Mesh(
-      screenGeo,
-      new THREE.MeshPhysicalMaterial({ color: '#000000', emissive: '#ffffff', emissiveMap: screenTex, emissiveIntensity: 1.05, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05 }),
-    ),
-  );
+  const screenMat = new THREE.MeshPhysicalMaterial({ color: '#000000', emissive: '#ffffff', emissiveMap: screenTex, emissiveIntensity: 1.05, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05 });
+  inner.add(new THREE.Mesh(screenGeo, screenMat));
 
   // ---------- stickers
   const sheet = new StickerSheet(1024, 840, bctx, 14);
@@ -493,7 +494,34 @@ function build(bctx: ObjectBuildContext) {
   inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.42, clearcoat: 0.55 }), '#f3efe6')));
 
   const update = (t: number) => drawScreen(scr, Math.floor(t * 6) % 4);
-  return finish(inner, trash, update, 'relax-station');
+
+  // ---------- signature: loading a disk. The floppy is pushed all the way in (click), the screen
+  // flickers while the drive reads, and the drive spits it back out with a small overshoot.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  const glow = screenMat.emissiveIntensity;
+  const sig = signature(1.9, (p, t) => {
+    const push = easeInCubic(span(t, 0, 0.22));
+    const eject = easeOutBack(span(t, 1.25, 1.6), 2.6);
+    floppy.position.z = -3.6 * push * (1 - eject);
+    // the click as it seats
+    const click = t > 0.22 ? wobble(t - 0.22, 6, 12) : 0;
+    rig.rotation.x = 0.008 * click;
+    // reading: the screen dims and flickers, then comes back bright
+    const reading = bump(t, 0.25, 0.32, 1.1, 1.25);
+    const flick = 0.75 + 0.25 * Math.sin(t * 47) * Math.sin(t * 13);
+    screenMat.emissiveIntensity = glow * (1 - reading * (1 - flick) - 0.25 * reading + 0.35 * bump(t, 1.15, 1.25, 1.3, 1.6));
+    rig.position.y = 0.25 * (t > 1.3 ? Math.max(0, wobble(t - 1.3, 3, 8)) : 0);
+    if (p >= 1) {
+      floppy.position.z = 0;
+      rig.rotation.set(0, 0, 0);
+      rig.position.set(0, 0, 0);
+      screenMat.emissiveIntensity = glow;
+    }
+  });
+
+  return finish(inner, trash, update, 'relax-station', sig);
 }
 
 export const desktop: LibraryDef = {

@@ -3,6 +3,7 @@ import type { ObjectBuildContext } from '../types';
 import type { LibraryDef } from './types';
 import { Surface, StickerSheet, type AtlasCell } from '../textures';
 import { Trash, finish } from '../build';
+import { signature, easeInOut, span, wobble } from '../signature';
 import { lathe, merge, parametric, stickerPatch, surfaces, type SurfacePoint } from '../geometry';
 import { chrome, glossyPlastic, stickerSheet, paperBackfaces } from '../materials';
 import { FONTS, DEG, rng, text, sticker, rrPath, rrect, fillPath, starPath, smallPrint, grain, hexA, type C2D } from '../paint';
@@ -545,10 +546,13 @@ function build(bctx: ObjectBuildContext) {
   };
   placeBrush(lacquer);
   placeBrush(ferrule);
-  inner.add(new THREE.Mesh(lacquer, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.04 })));
+  // the brush (lacquer + chrome ferrule) moves as one in the signature motion
+  const brushRig = new THREE.Group();
+  brushRig.add(new THREE.Mesh(lacquer, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.18, clearcoat: 1, clearcoatRoughness: 0.04 })));
+  inner.add(brushRig);
 
   // ---------- chrome: ferrule + hinge knuckles
-  const hingeParts: THREE.BufferGeometry[] = [ferrule];
+  const hingeParts: THREE.BufferGeometry[] = [];
   for (const x of [-3.9, 3.9]) {
     const k = new THREE.CylinderGeometry(0.13, 0.13, 1.5, 20);
     k.rotateZ(Math.PI / 2);
@@ -561,7 +565,9 @@ function build(bctx: ObjectBuildContext) {
   }
   const chromeGeo = merge(hingeParts);
   hingeParts.forEach((g) => g.dispose());
-  inner.add(new THREE.Mesh(chromeGeo, chrome({ roughness: 0.12 })));
+  const chromeMat = chrome({ roughness: 0.12 });
+  inner.add(new THREE.Mesh(chromeGeo, chromeMat));
+  brushRig.add(new THREE.Mesh(ferrule, chromeMat));
 
   // ---------- stickers
   const sheet = new StickerSheet(1024, 768, bctx, 14);
@@ -587,7 +593,42 @@ function build(bctx: ObjectBuildContext) {
   [undo, drip, star, seal].forEach((g) => g.dispose());
   inner.add(new THREE.Mesh(stickersGeo, paperBackfaces(stickerSheet(sheetTex, { roughness: 0.32, clearcoat: 0.8 }), '#f3efe6')));
 
-  return finish(inner, trash, undefined, 'paintbox');
+  // ---------- signature: a few dabs. The brush lifts off the trough, hops along the front row
+  // dabbing three pans (it dips its tip into each), and lies back down where it was.
+  const rig = new THREE.Group();
+  while (inner.children.length) rig.add(inner.children[0]);
+  inner.add(rig);
+  // brush offsets from where it rests: [t, x, y, z, tilt]
+  const keys: [number, number, number, number, number][] = [
+    [0, 0, 0, 0, 0],
+    [0.28, -0.6, 1.5, -0.9, 0.12],
+    [0.42, -1.5, 0.35, -1.25, -0.18],
+    [0.54, -0.6, 1.25, -1.25, 0.1],
+    [0.66, 0.2, 0.35, -1.25, -0.18],
+    [0.78, 1.0, 1.25, -1.25, 0.1],
+    [0.9, 1.6, 0.35, -1.25, -0.18],
+    [1.08, 0.8, 1.4, -0.9, 0.1],
+    [1.42, 0, 0, 0, 0],
+  ];
+  const sig = signature(1.75, (p, t) => {
+    let k = 0;
+    while (k < keys.length - 2 && t > keys[k + 1][0]) k++;
+    const a = keys[k];
+    const b = keys[k + 1];
+    const e = easeInOut(span(t, a[0], b[0]));
+    brushRig.position.set(a[1] + (b[1] - a[1]) * e, a[2] + (b[2] - a[2]) * e, a[3] + (b[3] - a[3]) * e);
+    brushRig.rotation.z = a[4] + (b[4] - a[4]) * e;
+    // the box gives a small jolt each time the brush taps down, and as it lands back
+    const tap = [0.42, 0.66, 0.9].reduce((acc, at) => acc + (t > at ? wobble(t - at, 7, 14) : 0), 0) + (t > 1.42 ? wobble(t - 1.42, 5, 9) : 0);
+    rig.rotation.x = 0.006 * tap;
+    if (p >= 1) {
+      brushRig.position.set(0, 0, 0);
+      brushRig.rotation.set(0, 0, 0);
+      rig.rotation.set(0, 0, 0);
+    }
+  });
+
+  return finish(inner, trash, undefined, 'paintbox', sig);
 }
 
 export const paintbox: LibraryDef = {
